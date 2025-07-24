@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { View, StyleSheet, FlatList, Pressable, Text } from 'react-native';
-import { Stack } from 'expo-router';
+import { Stack, Link } from 'expo-router'; // Link를 추가로 import
 import ReportItem from '../../components/ReportItem'; // 방금 만든 ReportItem 컴포넌트
 import HeaderLeftGoBack from '../../components/HeaderLeftGoBack'; // 이전 단계에서 만든 뒤로가기 컴포넌트
 
@@ -46,7 +46,18 @@ export default function ReportScreen() {
       />
       <FlatList
         data={reports}
-        renderItem={({ item }) => <ReportItem title={item.title} tags={item.tags} />}
+        renderItem={({ item }) => (
+          // Link 컴포넌트로 ReportItem을 감쌉니다.
+          // href는 동적 경로인 /report/[id] 형태로 지정합니다.
+          // asChild prop을 통해 Pressable 기능을 ReportItem에 위임합니다.
+          <Link href={`/report/${item.id}` as any} asChild>
+            <ReportItem 
+              id={item.id} 
+              title={item.title} 
+              tags={item.tags} 
+            />
+          </Link>
+        )}
         keyExtractor={item => item.id}
         contentContainerStyle={styles.listContainer}
         showsVerticalScrollIndicator={false}

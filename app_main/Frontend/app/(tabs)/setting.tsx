@@ -1,25 +1,166 @@
-import { View, Text, StyleSheet } from 'react-native';
+import React, { useState } from 'react';
+import {
+  View,
+  Text,
+  StyleSheet,
+  Switch,
+  TouchableOpacity,
+  Alert,
+  ScrollView,
+  Platform,
+  TextInput,
+} from 'react-native';
 import { Stack } from 'expo-router';
-import HeaderLeftGoBack from '../../components/HeaderLeftGoBack'; // HeaderLeftGoBack.tsx 파일의 상대 경로
+import HeaderLeftGoBack from '../../components/HeaderLeftGoBack';
+
+let notificationStorage = {
+  notificationTimes: [
+    { id: '1', time: '09:41', enabled: true },
+    { id: '2', time: '16:42', enabled: true },
+  ],
+  allNotificationsPaused: false,
+};
+
+interface NotificationTime {
+  id: string;
+  time: string;
+  enabled: boolean;
+}
 
 export default function SettingScreen() {
+  const [notificationTimes, setNotificationTimes] = useState<NotificationTime[]>(
+    notificationStorage.notificationTimes
+  );
+  const [allNotificationsPaused, setAllNotificationsPaused] = useState(
+    notificationStorage.allNotificationsPaused
+  );
+  const [newTime, setNewTime] = useState('');
+
+  const toggleNotificationTime = (id: string) => {
+    const updatedTimes = notificationTimes.map(item =>
+      item.id === id ? { ...item, enabled: !item.enabled } : item
+    );
+    setNotificationTimes(updatedTimes);
+    notificationStorage.notificationTimes = updatedTimes;
+
+    console.log('알림 시간 설정 변경:', notificationStorage.notificationTimes);
+  };
+
+  const toggleAllNotifications = () => {
+    const newPausedState = !allNotificationsPaused;
+    setAllNotificationsPaused(newPausedState);
+    notificationStorage.allNotificationsPaused = newPausedState;
+
+    console.log('🔕 전체 알림 상태 변경:', newPausedState);
+
+    Alert.alert(
+      newPausedState ? '알림 중지' : '알림 재개',
+      newPausedState ? '모든 알림이 일시중지되었습니다.' : '알림이 다시 활성화되었습니다.'
+    );
+  };
+
+  const clearCache = () => {
+    Alert.alert(
+      '캐시 삭제',
+      '모든 캐시 데이터가 삭제됩니다. 계속하시겠습니까?',
+      [
+        { text: '취소', style: 'cancel' },
+        {
+          text: '삭제',
+          style: 'destructive',
+          onPress: () => {
+            console.log('🧹 캐시 삭제 실행');
+            Alert.alert('완료', '캐시가 성공적으로 삭제되었습니다.');
+          },
+        },
+      ]
+    );
+  };
+
+  const addNotificationTime = () => {
+    if (!newTime.match(/^\d{2}:\d{2}$/)) {
+      Alert.alert('시간 형식 오류', '시간은 HH:MM 형식으로 입력해주세요.');
+      return;
+    }
+
+    const newId = Date.now().toString();
+    const newEntry = { id: newId, time: newTime, enabled: false };
+    const updated = [...notificationTimes, newEntry];
+
+    setNotificationTimes(updated);
+    notificationStorage.notificationTimes = updated;
+    console.log('➕ 알림 추가:', newTime);
+    setNewTime('');
+  };
+
   return (
     <View style={styles.container}>
-      {/* Stack.Screen 컴포넌트를 사용하여 이 화면의 헤더를 개별적으로 설정합니다.
-        이 설정은 이 파일(like.tsx)에만 적용됩니다.
-      */}
       <Stack.Screen
         options={{
-          headerShown: true, // 헤더를 보이도록 설정합니다.
-          headerTitle: '', // 헤더 중앙에 표시될 제목입니다.
-          headerLeft: () => <HeaderLeftGoBack />, // 헤더 왼쪽에 표시될 컴포넌트를 지정합니다.
-          headerTitleAlign: 'center', // 제목을 중앙에 정렬합니다.
-          headerShadowVisible: false, // 헤더 아래의 그림자를 제거합니다.
+          headerShown: true,
+          headerTitle: '',
+          headerLeft: () => <HeaderLeftGoBack />,
+          headerTitleAlign: 'center',
+          headerShadowVisible: false,
+          headerBackground: () => <View style={{ flex: 1, backgroundColor: '#f8f9fa' }} />,
         }}
       />
 
-      <Text>좋아요 페이지 콘텐츠</Text>
-      {/* 여기에 좋아요 페이지의 나머지 콘텐츠를 추가하세요. */}
+      <ScrollView style={styles.scrollView} showsVerticalScrollIndicator={false}>
+        <View style={styles.section}>
+          <View style={styles.sectionHeader}>
+            <Text style={styles.sectionTitle}>모든 알람 일시 중지</Text>
+            <Switch
+              value={allNotificationsPaused}
+              onValueChange={toggleAllNotifications}
+              trackColor={{ false: '#e0e0e0', true: '#34C759' }}
+              thumbColor={Platform.OS === 'ios' ? '#ffffff' : allNotificationsPaused ? '#ffffff' : '#f4f3f4'}
+            />
+          </View>
+        </View>
+
+        <View style={styles.section}>
+          {/* ✅ 수정된 알림 시간 설정 헤더와 입력 필드 */}
+          <View style={styles.sectionHeader}>
+            <Text style={styles.sectionTitle}>알림 시간 설정</Text>
+            <View style={styles.addRow}>
+              <TextInput
+                placeholder="13:45"
+                value={newTime}
+                onChangeText={setNewTime}
+                style={styles.input}
+                keyboardType="numeric"
+                maxLength={5}
+              />
+              <TouchableOpacity onPress={addNotificationTime} style={styles.addButton}>
+                <Text style={styles.addButtonText}>추가</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+
+          {notificationTimes.map((timeItem) => (
+            <View key={timeItem.id} style={styles.timeItem}>
+              <Text style={styles.timeText}>{timeItem.time}</Text>
+              <Switch
+                value={timeItem.enabled && !allNotificationsPaused}
+                onValueChange={() => toggleNotificationTime(timeItem.id)}
+                disabled={allNotificationsPaused}
+                trackColor={{ false: '#e0e0e0', true: '#34C759' }}
+                thumbColor={Platform.OS === 'ios' ? '#ffffff' : timeItem.enabled ? '#ffffff' : '#f4f3f4'}
+              />
+            </View>
+          ))}
+        </View>
+
+        <View style={styles.section}>
+          <TouchableOpacity style={styles.cacheButton} onPress={clearCache}>
+            <Text style={styles.cacheButtonText}>캐시 삭제</Text>
+            <View style={styles.trashIcon}>
+              <Text style={styles.trashIconText}>🗑</Text>
+            </View>
+          </TouchableOpacity>
+        </View>
+      </ScrollView>
     </View>
   );
 }
@@ -27,8 +168,86 @@ export default function SettingScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
+    backgroundColor: '#f8f9fa',
+  },
+  scrollView: {
+    flex: 1,
+  },
+  section: {
+    backgroundColor: '#ffffff',
+    marginHorizontal: 16,
+    marginVertical: 8,
+    borderRadius: 12,
+    padding: 16,
+    elevation: 1,
+  },
+  sectionHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
     alignItems: 'center',
+    marginBottom: 8,
+  },
+  sectionTitle: {
+    fontSize: 16,
+    fontWeight: '500',
+    color: '#333',
+  },
+  timeItem: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: '#f0f0f0',
+  },
+  timeText: {
+    fontSize: 18,
+    color: '#333',
+    fontWeight: '500',
+  },
+  addRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  input: {
+    borderWidth: 1,
+    borderColor: '#ccc',
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    fontSize: 14,
+    width: 60,
+  },
+  addButton: {
+    backgroundColor: '#34C759',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 8,
+  },
+  addButtonText: {
+    color: '#fff',
+    fontWeight: '600',
+    fontSize: 14,
+  },
+  cacheButton: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: 4,
+  },
+  cacheButtonText: {
+    fontSize: 16,
+    color: '#333',
+    fontWeight: '500',
+  },
+  trashIcon: {
+    width: 24,
+    height: 24,
     justifyContent: 'center',
-    backgroundColor: '#fff',
+    alignItems: 'center',
+  },
+  trashIconText: {
+    fontSize: 18,
   },
 });

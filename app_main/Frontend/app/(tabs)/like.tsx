@@ -1,9 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { View, StyleSheet, FlatList, Pressable, Text } from 'react-native';
 import { Stack } from 'expo-router';
-import ReportItem from '../../components/ReportItem'; // 방금 만든 ReportItem 컴포넌트
-import HeaderLeftGoBack from '../../components/HeaderLeftGoBack'; // 이전 단계에서 만든 뒤로가기 컴포넌트
-
+import { Ionicons } from '@expo/vector-icons';
+import ReportItem from '../../components/ReportItem';
+import HeaderLeftGoBack from '@/components/HeaderLeftGoBack';
 
 interface ReportData {
   id: string;
@@ -11,7 +11,6 @@ interface ReportData {
   tags: string[];
 }
 
-// 백엔드 API가 완성되기 전 사용할 임시 데이터
 const MOCK_DATA: ReportData[] = [
   { id: '1', title: 'AI 리버싱 기술, 코드게이트 2025 핵심 화두 부상', tags: ['리버싱', 'AI리버싱', '코드게이트2025'] },
   { id: '2', title: '클라우드 보안의 미래, 서버리스 아키텍처의 역할', tags: ['클라우드', '보안', '서버리스'] },
@@ -20,22 +19,45 @@ const MOCK_DATA: ReportData[] = [
   { id: '5', title: '양자 컴퓨팅이 암호화 기술에 미치는 영향 분석', tags: ['양자컴퓨팅', '암호화', '보안'] },
 ];
 
-export default function LikeScreen() {
+export default function ReportScreen() {
   const [reports, setReports] = useState<ReportData[]>([]);
+  const [isEditMode, setIsEditMode] = useState(false); // 편집 모드 상태
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set()); // 선택된 항목 ID 저장
 
-  // 컴포넌트가 마운트될 때 데이터를 불러옵니다.
-  // TODO: 추후 실제 API 호출 코드로 교체해야 합니다.
   useEffect(() => {
-    // 현재는 임시 데이터를 사용합니다.
     setReports(MOCK_DATA);
-    // 예시: fetch('https://your-api.com/reports')
-    //   .then(res => res.json())
-    //   .then(data => setReports(data));
   }, []);
 
-  const handleEdit = () => {
-    // '편집' 버튼을 눌렀을 때의 동작을 여기에 구현합니다.
-    console.log('편집 버튼 클릭');
+  // 편집 모드 토글 함수
+  const toggleEditMode = () => {
+    if (isEditMode) {
+      // 편집 모드를 나갈 때 선택 목록 초기화
+      setSelectedIds(new Set());
+    }
+    setIsEditMode(!isEditMode);
+  };
+
+  // 항목 선택/해제 처리 함수
+  const handleSelectReport = (id: string) => {
+    const newSelectedIds = new Set(selectedIds);
+    if (newSelectedIds.has(id)) {
+      newSelectedIds.delete(id);
+    } else {
+      newSelectedIds.add(id);
+    }
+    setSelectedIds(newSelectedIds);
+  };
+
+  // 선택된 항목 삭제 함수
+  const handleDeleteSelected = () => {
+    if (selectedIds.size === 0) {
+      // 선택된 항목이 없으면 아무것도 안 함
+      toggleEditMode(); // 편집 모드 종료
+      return;
+    }
+    const newReports = reports.filter(report => !selectedIds.has(report.id));
+    setReports(newReports);
+    toggleEditMode(); // 삭제 후 편집 모드 종료
   };
 
   return (
@@ -43,23 +65,49 @@ export default function LikeScreen() {
       <Stack.Screen
         options={{
           headerShown: true,
-          headerTitle: '', // 제목을 비워서 깔끔하게 만듭니다.
-          headerLeft: () => <HeaderLeftGoBack />,
-          headerRight: () => (
-            <Pressable onPress={handleEdit} style={styles.editButton}>
-              <Text style={styles.editButtonText}>편집</Text>
-            </Pressable>
-          ),
-          headerBackground: () => <View style={{ flex: 1, backgroundColor: '#f8f9fa' }} />,
+          headerTitle: '',
           headerShadowVisible: false,
+          headerBackground: () => <View style={{ flex: 1, backgroundColor: '#f8f9fa' }} />,
+          // 편집 모드에 따라 헤더 버튼을 동적으로 변경
+          headerLeft: () => (
+            isEditMode ? (
+              <Pressable onPress={toggleEditMode} style={styles.headerButton}>
+                <Text style={styles.headerButtonText}>취소</Text>
+              </Pressable>
+            ) : (
+              <HeaderLeftGoBack />
+            )
+          ),
+          headerRight: () => (
+            isEditMode ? (
+              <Pressable onPress={handleDeleteSelected} style={styles.headerButton}>
+                <Ionicons name="trash-outline" size={28} color="#FF3B30" />
+              </Pressable>
+            ) : (
+              <Pressable onPress={toggleEditMode} style={styles.headerButton}>
+                <Text style={styles.headerButtonText}>편집</Text>
+              </Pressable>
+            )
+          ),
         }}
       />
       <FlatList
         data={reports}
-        renderItem={({ item }) => <ReportItem title={item.title} tags={item.tags} />}
+        renderItem={({ item }) => (
+          <ReportItem
+            id={item.id}
+            title={item.title}
+            tags={item.tags}
+            isEditMode={isEditMode}
+            isSelected={selectedIds.has(item.id)}
+            onSelect={handleSelectReport}
+          />
+        )}
         keyExtractor={item => item.id}
         contentContainerStyle={styles.listContainer}
         showsVerticalScrollIndicator={false}
+        // FlatList의 추가적인 최적화 속성
+        extraData={{ isEditMode, selectedIds }}
       />
     </View>
   );
@@ -74,11 +122,12 @@ const styles = StyleSheet.create({
     paddingTop: 16,
     paddingBottom: 16,
   },
-  editButton: {
-    marginRight: 16,
-    padding: 8,
+  headerButton: {
+    paddingHorizontal: 20,
+    justifyContent: 'center',
+    height: '100%',
   },
-  editButtonText: {
+  headerButtonText: {
     fontSize: 20,
     color: '#000',
   },
