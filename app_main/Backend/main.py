@@ -1,4 +1,3 @@
-
 """
 Simple Issue Search System with Perplexity and Claude
 Perplexity와 Claude를 사용한 간단한 이슈 검색 시스템
@@ -8,16 +7,32 @@ import asyncio
 import re
 import time
 from typing import List, Dict, Optional, Any
-from dataclasses import dataclass
+from dataclasses import dataclass, asdict
 from datetime import datetime
 import httpx
 from loguru import logger
 import anthropic
 import os
 from dotenv import load_dotenv
+from fastapi import FastAPI
+from pydantic import BaseModel
+from fastapi.responses import JSONResponse
+from fastapi.middleware.cors import CORSMiddleware
 
 # 환경 변수 로드
 load_dotenv()
+
+# FastAPI 앱 생성
+app = FastAPI()
+
+# CORS 미들웨어 추가 (개발 중 모든 출처 허용)
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # 프로덕션에서는 실제 프론트엔드 주소로 변경해야 합니다.
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 
 # ============= 데이터 모델 =============
@@ -59,7 +74,7 @@ class PerplexityKeywordGenerator:
             return self._generate_basic_keywords(topic)
 
         try:
-            prompt = f"""
+            prompt = f'''
 주제: "{topic}"
 
 이 주제와 관련된 실시간 검색 키워드를 {max_keywords}개 생성해주세요.
@@ -68,7 +83,7 @@ class PerplexityKeywordGenerator:
 - 현재 시간 기준 최신 트렌드를 반영한 키워드 2-3개
 
 한 줄에 하나씩, 키워드만 나열해주세요.
-"""
+'''
             headers = {
                 "Authorization": f"Bearer {self.api_key}",
                 "Content-Type": "application/json"
@@ -123,7 +138,7 @@ class SimplePerplexityClient:
 
     async def search_issues(self, keywords: List[str], time_period: str = "최근 1주일") -> Dict[str, Any]:
         """이슈 검색 (URL 위주)"""
-        prompt = f"""
+        prompt = f'''
 '{ ", ".join(keywords)}' 키워드와 관련하여 '{time_period}' 동안 발행된 주요 이슈를 찾아주세요.
 **중요: 블로그나 개인 의견보다는 공식 발표, 신뢰도 높은 뉴스 매체의 정보를 우선으로 찾아주세요.**
 
@@ -135,7 +150,7 @@ class SimplePerplexityClient:
 **카테고리**: [뉴스/기술/비즈니스 등]
 
 최대 5개의 가장 관련성 높은 이슈를 찾아주세요.
-"""
+'''
 
         headers = {
             "Authorization": f"Bearer {self.api_key}",
@@ -169,12 +184,12 @@ class SimplePerplexityClient:
             logger.warning("Perplexity API 키가 없어 콘텐츠를 추출할 수 없습니다.")
             return None
 
-        prompt = f"""
+        prompt = f'''
 다음 URL의 웹페이지에서 광고, 메뉴, 댓글 등 부가적인 요소를 제외하고 순수 본문 텍스트만 추출해주세요.
 추출된 텍스트는 마크다운 형식이 아니어야 합니다. 순수 텍스트로만 제공해주세요.
 
 URL: {url}
-"""
+'''
         headers = {
             "Authorization": f"Bearer {self.api_key}",
             "Content-Type": "application/json"
@@ -207,14 +222,14 @@ class ClaudeAnalyzer:
     def __init__(self, api_key: Optional[str] = None):
         self.api_key = api_key or os.getenv('ANTHROPIC_API_KEY')
         self.client = anthropic.AsyncAnthropic(api_key=self.api_key) if self.api_key else None
-        self.model = "claude-4-opus"
+        self.model = "claude-3-5-sonnet-20240620" # 최신 모델로 변경
 
     async def summarize_issue(self, content: str, topic: str) -> str:
         """Claude를 사용하여 개별 이슈 콘텐츠 요약"""
         if not self.client:
             return "Claude API 키가 없어 요약할 수 없습니다."
 
-        prompt = f"""
+        prompt = f'''
 주제: "{topic}"
 
 다음은 해당 주제와 관련된 기사 본문입니다. 이 본문을 한국어로 상세히 요약해주세요.
@@ -224,7 +239,7 @@ class ClaudeAnalyzer:
 
 --- 기사 본문 ---
 {content}
-"""
+'''
 
         try:
             message = await self.client.messages.create(
@@ -255,7 +270,7 @@ class ClaudeAnalyzer:
         if not issues_text:
             return {"summary": "분석할 이슈가 없습니다.", "insights": []}
 
-        prompt = f"""
+        prompt = f'''
 주제: "{topic}"
 
 다음은 관련 이슈들의 요약입니다:
@@ -267,7 +282,7 @@ class ClaudeAnalyzer:
 3. 향후 예상되는 동향 (1-2문장)
 
 간결하고 명확하게 작성해주세요.
-"""
+'''
 
         try:
             message = await self.client.messages.create(
@@ -276,7 +291,7 @@ class ClaudeAnalyzer:
                 temperature=0.5,
                 system="당신은 기술 트렌드 분석 전문가입니다. 이슈들을 종합적으로 분석하여 인사이트를 도출합니다.",
                 messages=[
-                    {"role": "user", "content": prompt}2
+                    {"role": "user", "content": prompt}
                 ]
             )
             analysis_text = message.content[0].text
@@ -328,14 +343,17 @@ class ClaudeIssueSearcher:
             search_time = time.time() - start_time
             logger.info(f"검색 및 요약 완료: {len(issues)}개 이슈 처리 ({search_time:.2f}초)")
 
+            # dataclass를 dict로 변환
             result = SearchResult(topic=topic, keywords=keywords, issues=issues, total_found=len(issues), search_time=search_time)
-            return {"search_result": result, "analysis": analysis}
+            return {"search_result": asdict(result), "analysis": analysis}
 
         except Exception as e:
             logger.error(f"전체 검색 프로세스 실패: {e}")
+            search_result = SearchResult(topic=topic, keywords=[topic], issues=[], total_found=0, search_time=time.time() - start_time)
             return {
-                "search_result": SearchResult(topic=topic, keywords=[topic], issues=[], total_found=0, search_time=time.time() - start_time),
-                "analysis": None
+                "search_result": asdict(search_result),
+                "analysis": None,
+                "error": str(e)
             }
 
     async def _fetch_and_summarize_issue(self, issue: IssueItem, topic: str):
@@ -373,7 +391,7 @@ class ClaudeIssueSearcher:
             title = title_match.group(1).strip()
 
             source = self._extract_field(section, '출처') or 'Unknown'
-            url_match = re.search(r'https?://[^\s/$.?#].[^\s]*', source)
+            url_match = re.search(r'https?://[^\s/$.#].[^\s]*', source)
             url = url_match.group(0).strip() if url_match else None
             if not url: return None
 
@@ -392,35 +410,52 @@ class ClaudeIssueSearcher:
         return match.group(1).strip() if match else None
 
 
-# ============= 사용 예제 =============
-async def main():
-    """사용 예제"""
+# ============= API 엔드포인트 =============
+class SearchRequest(BaseModel):
+    topic: str
+    time_period: str = "최근 1주일"
+    analyze: bool = True
+
+@app.post("/api/search")
+async def run_search(request: SearchRequest):
+    """
+    주제를 받아 이슈를 검색, 요약, 분석하고 결과를 JSON으로 반환합니다.
+    """
     searcher = ClaudeIssueSearcher()
-    topic = "iOS"
-    result = await searcher.search(topic, "최근 1주일", analyze=True)
+    topic = request.topic
+    result = await searcher.search(topic, request.time_period, request.analyze)
 
-    search_result = result["search_result"]
-    analysis = result["analysis"]
+    search_result_data = result.get("search_result")
+    analysis = result.get("analysis")
 
-    print(f"\n=== '{topic}' 검색 결과 (Perplexity+Claude) ===")
-    print(f"키워드: {', '.join(search_result.keywords)}")
-    print(f"처리된 이슈: {search_result.total_found}개")
-    print(f"총 소요 시간: {search_result.search_time:.2f}초\n")
+    if search_result_data and search_result_data.get("issues"):
+        # search_result_data는 이미 dict입니다。
+        summarized_content = []
+        for issue in search_result_data["issues"]:
+            if issue.get("summary") and "실패" not in issue["summary"]:
+                summarized_content.append(f"### {issue['title']}\n\n{issue['summary']}")
 
-    for i, issue in enumerate(search_result.issues, 1):
-        print(f"--- 이슈 #{i} ---")
-        print(f"제목: {issue.title}")
-        print(f"출처: {issue.source}")
-        print(f"날짜: {issue.published_date}")
-        print(f"\n>> Claude 요약:")
-        print(issue.summary)
-        print("-" * 20 + "\n")
+        final_report = {
+            "제목": analysis.get("summary", f"{topic}에 대한 분석 요약") if analysis else f"{topic}에 대한 분석 요약",
+            "태그": search_result_data.get("keywords", [])[:3],
+            "보고서": {
+                "정리된 내용": "\n\n---\n\n".join(summarized_content),
+                "AI가 제공하는 리포트": analysis.get("full_analysis", "상세 분석 내용이 없습니다.") if analysis else "상세 분석 내용이 없습니다.",
+                "출처 링크": [issue.get("url") for issue in search_result_data["issues"] if issue.get("url")]
+            }
+        }
+        return JSONResponse(content=final_report)
+    else:
+        error_report = {
+            "error": "검색 또는 분석에 실패했거나 결과가 없습니다.",
+            "topic": topic,
+            "details": result.get("error")
+        }
+        return JSONResponse(content=error_report, status_code=500)
 
-    if analysis:
-        print("\n=== Claude Opus 4 종합 분석 결과 ===")
-        print(analysis.get('full_analysis', 'N/A'))
+@app.get("/")
+async def root():
+    return {"message": "Sejong_Dx_Hackathon Backend API"}
 
-
-# 실행
-if __name__ == "__main__":
-    asyncio.run(main())
+# uvicorn으로 서버를 실행하려면 터미널에 다음을 입력하세요:
+# uvicorn main:app --reload --host 0.0.0.0 --port 8000
