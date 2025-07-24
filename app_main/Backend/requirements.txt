@@ -1,3 +1,9 @@
 fastapi
 uvicorn
 pytest
+httpx
+loguru
+anthropic
+python-dotenv
+pydantic
+requests
