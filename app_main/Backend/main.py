@@ -140,7 +140,7 @@ class SimplePerplexityClient:
         """이슈 검색 (URL 위주)"""
         prompt = f'''
 '{ ", ".join(keywords)}' 키워드와 관련하여 '{time_period}' 동안 발행된 주요 이슈를 찾아주세요.
-**중요: 블로그나 개인 의견보다는 공식 발표, 신뢰도 높은 뉴스 매체의 정보를 우선으로 찾아주세요.**
+**중요: 블로그나 유튜브 등 개인 의견을 표현할 수 있는 정보 출처 보다는 공식 발표, 신뢰도 높은 뉴스 매체의 정보만 찾아주세요.**
 
 각 이슈마다 다음 형식으로 작성해주세요:
 
@@ -270,36 +270,69 @@ class ClaudeAnalyzer:
         if not issues_text:
             return {"summary": "분석할 이슈가 없습니다.", "insights": []}
 
+        # JSON 형식으로 구조화된 응답 요청
         prompt = f'''
-주제: "{topic}"
+    주제: "{topic}"
 
-다음은 관련 이슈들의 요약입니다:
-{issues_text}
+    다음은 관련 이슈들의 요약입니다:
+    {issues_text}
 
-위 이슈들을 종합적으로 분석하여 다음을 제공해주세요:
-1. 전체적인 트렌드 요약 (2-3문장)
-2. 주요 인사이트 3가지 (각 인사이트는 2-3문장으로 설명)
-3. 향후 예상되는 동향 (1-2문장)
+    위 이슈들을 종합적으로 분석하여 다음 JSON 형식으로 응답해주세요:
+    {{
+        "trend_summary": "전체적인 트렌드를 짧은 1문장으로 요약",
+        "insights": [
+            "첫 번째 주요 인사이트 (2-3문장)",
+            "두 번째 주요 인사이트 (2-3문장)",
+            "세 번째 주요 인사이트 (2-3문장)"
+        ],
+        "future_outlook": "향후 예상되는 동향 (1-2문장)"
+    }}
 
-간결하고 명확하게 작성해주세요.
-'''
+    반드시 유효한 JSON 형식으로만 응답하세요.
+    '''
 
         try:
             message = await self.client.messages.create(
                 model=self.model,
                 max_tokens=1500,
                 temperature=0.5,
-                system="당신은 기술 트렌드 분석 전문가입니다. 이슈들을 종합적으로 분석하여 인사이트를 도출합니다.",
+                system="당신은 기술 트렌드 분석 전문가입니다. 항상 요청된 JSON 형식으로만 응답합니다.",
                 messages=[
                     {"role": "user", "content": prompt}
                 ]
             )
-            analysis_text = message.content[0].text
-            return {
-                "summary": analysis_text.split("\n")[0] if analysis_text else "분석 결과 없음",
-                "full_analysis": analysis_text,
-                "analyzed_count": len([issue for issue in issues if issue.summary and "실패" not in issue.summary])
-            }
+
+            response_text = message.content[0].text.strip()
+
+            try:
+                # JSON 파싱 시도
+                import json
+                parsed_response = json.loads(response_text)
+
+                # 전체 분석 텍스트 재구성
+                full_analysis = f"{parsed_response.get('trend_summary', '')}\n\n"
+                full_analysis += "주요 인사이트:\n"
+                for i, insight in enumerate(parsed_response.get('insights', []), 1):
+                    full_analysis += f"{i}. {insight}\n\n"
+                full_analysis += f"향후 전망: {parsed_response.get('future_outlook', '')}"
+
+                return {
+                    "summary": parsed_response.get('trend_summary', '분석 결과 없음'),
+                    "full_analysis": full_analysis,
+                    "analyzed_count": len([issue for issue in issues if issue.summary and "실패" not in issue.summary])
+                }
+            except json.JSONDecodeError:
+                # JSON 파싱 실패 시 기존 방식으로 처리
+                lines = response_text.split('\n')
+                summary = next((line.strip() for line in lines if
+                                line.strip() and not line.strip().endswith(':') and len(line.strip()) > 10), "분석 결과 없음")
+
+                return {
+                    "summary": summary,
+                    "full_analysis": response_text,
+                    "analyzed_count": len([issue for issue in issues if issue.summary and "실패" not in issue.summary])
+                }
+
         except Exception as e:
             logger.error(f"Claude 분석 실패: {e}")
             return {"summary": "분석 실패", "insights": []}
