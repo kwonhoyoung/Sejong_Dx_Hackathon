@@ -1,6 +1,5 @@
 """
-Simple Issue Search System with Claude Opus 4
-Claude Opus 4를 사용한 간단한 이슈 검색 시스템
+Claude Opus 4를 사용한 간단한 이슈 검색 시스템 (하이브리드 방식)
 """
 
 import asyncio
@@ -14,6 +13,7 @@ from loguru import logger
 import anthropic
 import os
 from dotenv import load_dotenv
+import sys # sys 모듈 임포트
 
 # 환경 변수 로드
 load_dotenv()
@@ -43,9 +43,9 @@ class SearchResult:
     search_time: float
 
 
-# ============= 키워드 생성 =============
+# ============= 키워드 생성 (하이브리드 방식에서는 직접 사용되지 않음) =============
 class ClaudeKeywordGenerator:
-    """Claude Opus 4를 사용한 키워드 생성기"""
+    """Claude Opus 4를 사용한 키워드 생성기 (하이브리드 방식에서는 직접 사용되지 않음)"""
 
     def __init__(self, api_key: Optional[str] = None):
         self.api_key = api_key or os.getenv('ANTHROPIC_API_KEY')
@@ -114,8 +114,9 @@ class SimplePerplexityClient:
 
     async def search_issues(self, keywords: List[str], time_period: str = "최근 1주일") -> Dict[str, Any]:
         """이슈 검색"""
+        # 하이브리드 방식에서는 확장된 키워드를 사용하여 검색 프롬프트 생성
         prompt = f"""
-'{", ".join(keywords[:5])}' 키워드와 관련하여 '{time_period}' 동안 발행된 주요 이슈를 찾아주세요.
+'{", ".join(keywords)}' 키워드와 관련하여 '{time_period}' 동안 발행된 주요 이슈를 찾아주세요.
 
 각 이슈마다 다음 형식으로 작성해주세요:
 
@@ -219,7 +220,7 @@ class ClaudeIssueSearcher:
     """Claude Opus 4를 활용한 이슈 검색기"""
 
     def __init__(self, anthropic_key: Optional[str] = None, perplexity_key: Optional[str] = None):
-        self.keyword_generator = ClaudeKeywordGenerator(anthropic_key)
+        self.keyword_generator = ClaudeKeywordGenerator(anthropic_key) # 여전히 존재하지만 사용되지 않음
         self.perplexity_client = SimplePerplexityClient(perplexity_key)
         self.analyzer = ClaudeAnalyzer(anthropic_key)
 
@@ -228,10 +229,16 @@ class ClaudeIssueSearcher:
         start_time = time.time()
 
         try:
-            # 1. Claude로 키워드 생성
-            logger.info(f"Claude Opus 4로 키워드 생성 중: {topic}")
-            keywords = await self.keyword_generator.generate_keywords(topic)
-            logger.info(f"생성된 키워드: {keywords}")
+            # 1. 하이브리드 방식으로 키워드 확장 (API 호출 없이)
+            logger.info(f"하이브리드 방식으로 키워드 확장 중: {topic}")
+            expanded_keywords = [
+                topic,
+                f"{topic} 최신",
+                f"{topic} 동향",
+                f"{topic} 이슈"
+            ]
+            keywords = expanded_keywords # 이 키워드들을 검색 및 결과 객체에 사용
+            logger.info(f"확장된 키워드: {keywords}")
 
             # 2. Perplexity로 이슈 검색
             logger.info("이슈 검색 중...")
@@ -252,7 +259,7 @@ class ClaudeIssueSearcher:
 
             result = SearchResult(
                 topic=topic,
-                keywords=keywords,
+                keywords=keywords, # 확장된 키워드를 결과에 포함
                 issues=issues,
                 total_found=len(issues),
                 search_time=search_time
@@ -364,33 +371,53 @@ async def main():
     searcher = ClaudeIssueSearcher()
 
     # 이슈 검색 및 분석
-    topic = "CVE"
+    topic = "iOS"
     result = await searcher.search(topic, "최근 1주일", analyze=True)
 
     search_result = result["search_result"]
     analysis = result["analysis"]
 
-    # 결과 출력
-    print(f"\n=== '{topic}' 검색 결과 (Claude Opus 4) ===")
-    print(f"키워드: {', '.join(search_result.keywords)}")
-    print(f"발견된 이슈: {search_result.total_found}개")
-    print(f"검색 시간: {search_result.search_time:.2f}초\n")
+    # 파일로 저장할 경로 및 파일명 설정
+    output_filename = f"{topic}_search_results.txt"
 
-    # 이슈 출력
-    for i, issue in enumerate(search_result.issues[:5], 1):
-        print(f"{i}. {issue.title}")
-        print(f"   출처: {issue.source}")
-        print(f"   날짜: {issue.published_date}")
-        print(f"   관련도: {issue.relevance_score:.1%}")
-        print(f"   요약: {issue.summary[:100]}...")
-        print()
+    # 기존 stdout을 저장
+    original_stdout = sys.stdout
 
-    # Claude 분석 결과 출력
-    if analysis:
-        print("\n=== Claude Opus 4 분석 결과 ===")
-        print(f"분석 요약: {analysis.get('summary', 'N/A')}")
-        if 'full_analysis' in analysis:
-            print(f"\n상세 분석:\n{analysis['full_analysis']}")
+    try:
+        # 파일을 쓰기 모드로 열고 stdout을 파일로 리디렉션
+        with open(output_filename, "w", encoding="utf-8") as f:
+            sys.stdout = f # stdout을 파일 객체로 변경
+
+            # 결과 출력
+            print(f"\n=== '{topic}' 검색 결과 ===")
+            print(f"키워드: {', '.join(search_result.keywords)}")
+            print(f"발견된 이슈: {search_result.total_found}개")
+            print(f"검색 시간: {search_result.search_time:.2f}초\n")
+
+            # 이슈 출력
+            for i, issue in enumerate(search_result.issues[:5], 1):
+                print(f"{i}. {issue.title}")
+                print(f"   출처: {issue.source}")
+                print(f"   날짜: {issue.published_date}")
+                print(f"   관련도: {issue.relevance_score:.1%}")
+                print(f"   요약: {issue.summary}")
+                print()
+
+            # Claude 분석 결과 출력
+            if analysis:
+                print("\n=== Claude Opus 4 분석 결과 ===")
+                print(f"분석 요약: {analysis.get('summary', 'N/A')}")
+                if 'full_analysis' in analysis:
+                    print(f"\n상세 분석:\n{analysis['full_analysis']}")
+
+        # 파일 저장이 완료되었음을 사용자에게 알림 (콘솔에 출력)
+        sys.stdout = original_stdout # stdout을 다시 콘솔로 복원
+        print(f"\n검색 결과가 '{output_filename}' 파일에 저장되었습니다.")
+
+    except Exception as e:
+        sys.stdout = original_stdout # 에러 발생 시에도 stdout 복원
+        logger.error(f"파일 저장 중 오류 발생: {e}")
+        print(f"오류 발생: 검색 결과를 파일에 저장할 수 없습니다. {e}")
 
 
 # 실행
