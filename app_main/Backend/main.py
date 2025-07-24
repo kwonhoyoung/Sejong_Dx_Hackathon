@@ -95,7 +95,7 @@ class PerplexityKeywordGenerator:
             if topic not in keywords:
                 keywords.insert(0, topic)
 
-            return keywords[:max_keywords]
+            return keywords
 
         except Exception as e:
             logger.error(f"Perplexity 키워드 생성 실패: {e}")
@@ -124,7 +124,7 @@ class SimplePerplexityClient:
     async def search_issues(self, keywords: List[str], time_period: str = "최근 1주일") -> Dict[str, Any]:
         """이슈 검색 (URL 위주)"""
         prompt = f"""
-'{ ", ".join(keywords[:5])}' 키워드와 관련하여 '{time_period}' 동안 발행된 주요 이슈를 찾아주세요.
+'{ ", ".join(keywords)}' 키워드와 관련하여 '{time_period}' 동안 발행된 주요 이슈를 찾아주세요.
 **중요: 블로그나 개인 의견보다는 공식 발표, 신뢰도 높은 뉴스 매체의 정보를 우선으로 찾아주세요.**
 
 각 이슈마다 다음 형식으로 작성해주세요:
@@ -207,7 +207,7 @@ class ClaudeAnalyzer:
     def __init__(self, api_key: Optional[str] = None):
         self.api_key = api_key or os.getenv('ANTHROPIC_API_KEY')
         self.client = anthropic.AsyncAnthropic(api_key=self.api_key) if self.api_key else None
-        self.model = "claude-3-opus-20240229" # Updated model
+        self.model = "claude-4-opus"
 
     async def summarize_issue(self, content: str, topic: str) -> str:
         """Claude를 사용하여 개별 이슈 콘텐츠 요약"""
@@ -223,7 +223,7 @@ class ClaudeAnalyzer:
 - 3-5 문단으로 구성된 상세한 요약문을 작성해주세요.
 
 --- 기사 본문 ---
-{content[:8000]}
+{content}
 """
 
         try:
@@ -276,7 +276,7 @@ class ClaudeAnalyzer:
                 temperature=0.5,
                 system="당신은 기술 트렌드 분석 전문가입니다. 이슈들을 종합적으로 분석하여 인사이트를 도출합니다.",
                 messages=[
-                    {"role": "user", "content": prompt}
+                    {"role": "user", "content": prompt}2
                 ]
             )
             analysis_text = message.content[0].text
@@ -360,7 +360,7 @@ class ClaudeIssueSearcher:
                 issue = self._parse_issue_section(section)
                 if issue and issue.url:
                     issues.append(issue)
-            return issues[:5]
+            return issues
         except Exception as e:
             logger.error(f"응답 파싱 실패: {e}")
             return []
