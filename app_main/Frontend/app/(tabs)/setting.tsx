@@ -93,6 +93,14 @@ export default function SettingScreen() {
     setNewTime('');
   };
 
+  // 삭제 함수 추가
+  const deleteNotificationTime = (id: string) => {
+    const filtered = notificationTimes.filter(item => item.id !== id);
+    setNotificationTimes(filtered);
+    notificationStorage.notificationTimes = filtered;
+    console.log('➖ 알림 삭제:', id);
+  };
+
   return (
     <View style={styles.container}>
       <Stack.Screen
@@ -114,13 +122,15 @@ export default function SettingScreen() {
               value={allNotificationsPaused}
               onValueChange={toggleAllNotifications}
               trackColor={{ false: '#e0e0e0', true: '#34C759' }}
-              thumbColor={Platform.OS === 'ios' ? '#ffffff' : allNotificationsPaused ? '#ffffff' : '#f4f3f4'}
+              thumbColor={
+                Platform.OS === 'ios' ? '#ffffff' : allNotificationsPaused ? '#ffffff' : '#f4f3f4'
+              }
             />
           </View>
         </View>
 
         <View style={styles.section}>
-          {/* ✅ 수정된 알림 시간 설정 헤더와 입력 필드 */}
+          {/* 알림 시간 설정 헤더 + 입력 필드 */}
           <View style={styles.sectionHeader}>
             <Text style={styles.sectionTitle}>알림 시간 설정</Text>
             <View style={styles.addRow}>
@@ -138,16 +148,44 @@ export default function SettingScreen() {
             </View>
           </View>
 
-          {notificationTimes.map((timeItem) => (
+          {notificationTimes.map(timeItem => (
             <View key={timeItem.id} style={styles.timeItem}>
               <Text style={styles.timeText}>{timeItem.time}</Text>
-              <Switch
-                value={timeItem.enabled && !allNotificationsPaused}
-                onValueChange={() => toggleNotificationTime(timeItem.id)}
-                disabled={allNotificationsPaused}
-                trackColor={{ false: '#e0e0e0', true: '#34C759' }}
-                thumbColor={Platform.OS === 'ios' ? '#ffffff' : timeItem.enabled ? '#ffffff' : '#f4f3f4'}
-              />
+
+              <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                <Switch
+                  value={timeItem.enabled && !allNotificationsPaused}
+                  onValueChange={() => toggleNotificationTime(timeItem.id)}
+                  disabled={allNotificationsPaused}
+                  trackColor={{ false: '#e0e0e0', true: '#34C759' }}
+                  thumbColor={
+                    Platform.OS === 'ios'
+                      ? '#ffffff'
+                      : timeItem.enabled
+                      ? '#ffffff'
+                      : '#f4f3f4'
+                  }
+                />
+                <TouchableOpacity
+                  onPress={() =>
+                    Alert.alert(
+                      '삭제 확인',
+                      `${timeItem.time} 알림을 삭제하시겠습니까?`,
+                      [
+                        { text: '취소', style: 'cancel' },
+                        {
+                          text: '삭제',
+                          style: 'destructive',
+                          onPress: () => deleteNotificationTime(timeItem.id),
+                        },
+                      ]
+                    )
+                  }
+                  style={styles.deleteButton}
+                >
+                  <Text style={styles.deleteButtonText}>🗑</Text>
+                </TouchableOpacity>
+              </View>
             </View>
           ))}
         </View>
@@ -249,5 +287,16 @@ const styles = StyleSheet.create({
   },
   trashIconText: {
     fontSize: 18,
+  },
+
+  deleteButton: {
+    marginLeft: 12,
+    padding: 6,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  deleteButtonText: {
+    fontSize: 18,
+    color: '#ff3b30', // iOS 빨간색 느낌
   },
 });
