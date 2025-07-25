@@ -1,14 +1,26 @@
 import React, { useState, useEffect } from 'react';
-import { View, StyleSheet, FlatList, Pressable, Text } from 'react-native';
-import { Stack, Link } from 'expo-router'; // Link를 추가로 import
-import ReportItem from '../../components/ReportItem'; // 방금 만든 ReportItem 컴포넌트
-import HeaderLeftGoBack from '../../components/HeaderLeftGoBack'; // 이전 단계에서 만든 뒤로가기 컴포넌트
-
+import { View, StyleSheet, FlatList, Text, Alert } from 'react-native';
+import { Stack, Link, useLocalSearchParams } from 'expo-router';
+import ReportItem from '../../components/ReportItem';
+import HeaderLeftGoBack from '../../components/HeaderLeftGoBack';
 
 interface ReportData {
   id: string;
   title: string;
   tags: string[];
+  content?: string;
+  aiReport?: string;
+  sources?: string[];
+}
+
+interface SearchResponse {
+  제목: string;
+  태그: string[];
+  보고서: {
+    정리된내용: string;
+    AI가제공하는리포트: string;
+    출처링크: string[];
+  };
 }
 
 // 백엔드 API가 완성되기 전 사용할 임시 데이터
@@ -22,45 +34,111 @@ const MOCK_DATA: ReportData[] = [
 
 export default function ReportScreen() {
   const [reports, setReports] = useState<ReportData[]>([]);
+  const [isLoading, setIsLoading] = useState(false);
+  const params = useLocalSearchParams();
 
-  // 컴포넌트가 마운트될 때 데이터를 불러옵니다.
-  // TODO: 추후 실제 API 호출 코드로 교체해야 합니다.
+  // 검색 결과를 ReportData 형식으로 변환하는 함수
+  const convertSearchResponseToReportData = (searchResponse: SearchResponse): ReportData => {
+    return {
+      id: Date.now().toString(), // 임시 ID 생성
+      title: searchResponse.제목,
+      tags: searchResponse.태그,
+      content: searchResponse.보고서.정리된내용,
+      aiReport: searchResponse.보고서.AI가제공하는리포트,
+      sources: searchResponse.보고서.출처링크,
+    };
+  };
+
   useEffect(() => {
-    // 현재는 임시 데이터를 사용합니다.
-    setReports(MOCK_DATA);
-    // 예시: fetch('https://your-api.com/reports')
-    //   .then(res => res.json())
-    //   .then(data => setReports(data));
-  }, []);
+    // 검색 결과가 있는 경우에만 처리
+    if (params.searchData) {
+      try {
+        const searchResponse: SearchResponse = JSON.parse(params.searchData as string);
+        const reportData = convertSearchResponseToReportData(searchResponse);
+        setReports([reportData]); // 검색 결과만 설정
+      } catch (error) {
+        console.error('검색 데이터 파싱 오류:', error);
+        Alert.alert('오류', '검색 결과를 불러오는 중 오류가 발생했습니다.');
+        setReports([]); // 오류 시 빈 배열로 설정
+      }
+    } else {
+      // 검색 결과가 없는 경우 빈 배열로 설정
+      setReports([]);
+    }
+  }, [params.searchData]);
+
+  // 추가 검색 기능 - 현재는 비활성화 (필요시 활성화)
+  const loadMoreReports = async () => {
+    // 실제 구현에서는 더 많은 검색 결과나 다른 주제의 보고서를 불러옴
+    // 현재는 검색 결과만 표시하므로 이 기능은 사용하지 않음
+    return;
+  };  
+
+  const renderFooter = () => {
+    if (isLoading) {
+      return (
+        <View style={styles.footerLoader}>
+          <Text>더 많은 보고서를 불러오는 중...</Text>
+        </View>
+      );
+    }
+    return null;
+  };
+
+  const renderEmptyComponent = () => (
+    <View style={styles.emptyContainer}>
+      <Text style={styles.emptyTitle}>🔍 검색 결과가 없습니다</Text>
+      <Text style={styles.emptyText}>
+        홈 화면에서 원하는 주제를 검색해보세요.{'\n'}
+        AI가 최신 이슈를 분석하여 보고서를 생성합니다.
+      </Text>
+    </View>
+  );
 
   return (
     <View style={styles.container}>
       <Stack.Screen
         options={{
           headerShown: true,
-          headerTitle: '', // 제목을 비워서 깔끔하게 만듭니다.
+          headerTitle: '',
           headerLeft: () => <HeaderLeftGoBack />,
           headerBackground: () => <View style={{ flex: 1, backgroundColor: '#f8f9fa' }} />,
           headerShadowVisible: false,
         }}
       />
+      
       <FlatList
         data={reports}
-        renderItem={({ item }) => (
-          // Link 컴포넌트로 ReportItem을 감쌉니다.
-          // href는 동적 경로인 /report/[id] 형태로 지정합니다.
-          // asChild prop을 통해 Pressable 기능을 ReportItem에 위임합니다.
-          <Link href={`/report/${item.id}` as any} asChild>
-            <ReportItem 
-              id={item.id} 
-              title={item.title} 
-              tags={item.tags} 
+        renderItem={({ item, index }) => (
+          <Link 
+            href={{
+              pathname: `/report/[id]` as any,
+              params: { 
+                id: item.id,
+                title: item.title,
+                tags: JSON.stringify(item.tags),
+                content: item.content || '',
+                aiReport: item.aiReport || '',
+                sources: JSON.stringify(item.sources || [])
+              }
+            }} 
+            asChild
+          >
+            <ReportItem
+              id={item.id}
+              title={item.title}
+              tags={item.tags}
             />
           </Link>
         )}
-        keyExtractor={item => item.id}
+        keyExtractor={(item, index) => `${item.id}-${index}`}
         contentContainerStyle={styles.listContainer}
         showsVerticalScrollIndicator={false}
+        ListFooterComponent={renderFooter}
+        ListEmptyComponent={renderEmptyComponent}
+        // onEndReached와 onEndReachedThreshold는 현재 사용하지 않음
+        // onEndReached={loadMoreReports}
+        // onEndReachedThreshold={0.1}
       />
     </View>
   );
@@ -69,10 +147,48 @@ export default function ReportScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#f8f9fa', 
+    backgroundColor: '#f8f9fa',
   },
   listContainer: {
-    paddingTop: 16,
     paddingBottom: 16,
+  },
+  headerContainer: {
+    paddingHorizontal: 20,
+    paddingVertical: 20,
+    backgroundColor: '#fff',
+    marginBottom: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: '#e9ecef',
+  },
+  headerTitle: {
+    fontSize: 24,
+    fontWeight: 'bold',
+    color: '#333',
+    marginBottom: 5,
+  },
+  headerSubtitle: {
+    fontSize: 16,
+    color: '#666',
+  },
+  footerLoader: {
+    padding: 20,
+    alignItems: 'center',
+  },
+  emptyContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingVertical: 50,
+  },
+  emptyTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#333',
+    marginBottom: 10,
+  },
+  emptyText: {
+    fontSize: 14,
+    color: '#666',
+    textAlign: 'center',
   },
 });
