@@ -2,7 +2,7 @@ import requests
 import json
 
 # API 엔드포인트 URL
-url = "http://0.0.0.0:8000/api/search"
+url = "http://127.0.0.1:8000/api/search"
 
 # 요청 헤더
 headers = {
