@@ -1,35 +1,32 @@
 import React from 'react';
-import { 
-  View, 
-  Text, 
-  StyleSheet, 
-  ScrollView, 
-  Pressable, 
+import {
+  View,
+  Text,
+  StyleSheet,
+  ScrollView,
+  Pressable,
   Linking,
-  Alert 
+  Alert
 } from 'react-native';
 import { Stack, useLocalSearchParams } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
-import HeaderLeftGoBack from '../../components/HeaderLeftGoBack';
+import HeaderLeftGoBack from '../../components/HeaderLeftGoBack'; // 경로 확인
 
 export default function ReportDetailScreen() {
   const params = useLocalSearchParams();
-  
-  // URL 파라미터에서 데이터 추출
+
   const {
     id,
-    title,
+    title, // title 값을 HeaderLeftGoBack으로 전달할 것입니다.
     tags: tagsParam,
     content,
     aiReport,
     sources: sourcesParam
   } = params;
 
-  // JSON 문자열을 객체로 변환
   const tags = tagsParam ? JSON.parse(tagsParam as string) : [];
   const sources = sourcesParam ? JSON.parse(sourcesParam as string) : [];
 
-  // 외부 링크 열기 함수
   const openLink = async (url: string) => {
     try {
       const supported = await Linking.canOpenURL(url);
@@ -44,17 +41,15 @@ export default function ReportDetailScreen() {
     }
   };
 
-  // 태그 렌더링 함수
   const renderTag = (tag: string, index: number) => (
     <View key={index} style={styles.tag}>
       <Text style={styles.tagText}>#{tag}</Text>
     </View>
   );
 
-  // 출처 링크 렌더링 함수
   const renderSource = (source: string, index: number) => (
-    <Pressable 
-      key={index} 
+    <Pressable
+      key={index}
       style={styles.sourceItem}
       onPress={() => openLink(source)}
     >
@@ -71,22 +66,27 @@ export default function ReportDetailScreen() {
       <Stack.Screen
         options={{
           headerShown: true,
-          headerTitle: '',
-          headerLeft: () => <HeaderLeftGoBack />,
+          headerTitle: () => (
+            <Text numberOfLines={1} style={styles.headerTitleText}>
+              {title}
+            </Text>
+          ),
+          // 여기에 title prop을 전달합니다.
+          headerLeft: () => <HeaderLeftGoBack title={title as string} />,
           headerBackground: () => <View style={{ flex: 1, backgroundColor: '#fff' }} />,
           headerShadowVisible: false,
         }}
       />
-      
-      <ScrollView 
+
+      <ScrollView
         style={styles.scrollView}
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
       >
-        {/* 헤더 섹션 */}
+        {/* 헤더 섹션 (여기서는 title을 제거해도 됩니다, 아니면 중복해서 표시됨) */}
         <View style={styles.header}>
-          <Text style={styles.title}>{title}</Text>
-          
+          {/* <Text style={styles.title}>{title}</Text> -- 이 부분은 이제 헤더 타이틀로 이동했으므로 필요없을 수 있습니다. */}
+
           {/* 태그 섹션 */}
           <View style={styles.tagsContainer}>
             {tags.map((tag: string, index: number) => renderTag(tag, index))}
@@ -161,12 +161,12 @@ const styles = StyleSheet.create({
     borderBottomColor: '#e9ecef',
     backgroundColor: '#f8f9fa',
   },
-  title: {
-    fontSize: 24,
+  headerTitleText: {
+    fontSize: 18,
     fontWeight: 'bold',
     color: '#333',
-    lineHeight: 32,
-    marginBottom: 15,
+    textAlign: 'center',
+    flexShrink: 1,
   },
   tagsContainer: {
     flexDirection: 'row',

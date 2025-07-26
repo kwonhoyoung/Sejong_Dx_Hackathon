@@ -1,194 +1,234 @@
+// app/(tabs)/report.tsx
 import React, { useState, useEffect } from 'react';
-import { View, StyleSheet, FlatList, Text, Alert } from 'react-native';
-import { Stack, Link, useLocalSearchParams } from 'expo-router';
-import ReportItem from '../../components/ReportItem';
-import HeaderLeftGoBack from '../../components/HeaderLeftGoBack';
+import { View, Text, StyleSheet, ScrollView, Alert, Pressable, Linking } from 'react-native';
+import { Stack, useLocalSearchParams } from 'expo-router';
+// HeaderLeftGoBack 컴포넌트 경로 확인. 이 경로는 'app/(tabs)/report.tsx' 기준입니다.
+import HeaderLeftGoBack from '../../components/HeaderLeftGoBack'; 
 
-interface ReportData {
-  id: string;
-  title: string;
-  tags: string[];
-  content?: string;
-  aiReport?: string;
-  sources?: string[];
-}
-
+// SearchResponse 인터페이스: HomeScreen과 동일하게 구조 정의 (키 이름 띄어쓰기 포함)
 interface SearchResponse {
   제목: string;
   태그: string[];
   보고서: {
-    정리된내용: string;
-    AI가제공하는리포트: string;
-    출처링크: string[];
+    '정리된 내용': string; 
+    'AI가 제공하는 리포트': string; 
+    '출처 링크': string[]; 
   };
 }
 
-// 백엔드 API가 완성되기 전 사용할 임시 데이터
-const MOCK_DATA: ReportData[] = [
-  { id: '1', title: 'AI 리버싱 기술, 코드게이트 2025 핵심 화두 부상', tags: ['리버싱', 'AI리버싱', '코드게이트2025'] },
-  { id: '2', title: '클라우드 보안의 미래, 서버리스 아키텍처의 역할', tags: ['클라우드', '보안', '서버리스'] },
-  { id: '3', title: 'LLM을 활용한 효과적인 챗봇 개발 전략', tags: ['LLM', '챗봇', '자연어처리'] },
-  { id: '4', title: '데이터 프라이버시, GDPR 준수를 위한 기술적 접근', tags: ['데이터', '프라이버시', 'GDPR'] },
-  { id: '5', title: '양자 컴퓨팅이 암호화 기술에 미치는 영향 분석', tags: ['양자컴퓨팅', '암호화', '보안'] },
-];
-
 export default function ReportScreen() {
-  const [reports, setReports] = useState<ReportData[]>([]);
-  const [isLoading, setIsLoading] = useState(false);
-  const params = useLocalSearchParams();
+  const params = useLocalSearchParams(); // URL 파라미터 가져오기
+  const [reportData, setReportData] = useState<SearchResponse | null>(null); // 보고서 데이터 상태
+  const [showSources, setShowSources] = useState(false); // 출처 표시 여부 상태 (토글용)
 
-  // 검색 결과를 ReportData 형식으로 변환하는 함수
-  const convertSearchResponseToReportData = (searchResponse: SearchResponse): ReportData => {
-    return {
-      id: Date.now().toString(), // 임시 ID 생성
-      title: searchResponse.제목,
-      tags: searchResponse.태그,
-      content: searchResponse.보고서.정리된내용,
-      aiReport: searchResponse.보고서.AI가제공하는리포트,
-      sources: searchResponse.보고서.출처링크,
-    };
-  };
-
+  // 컴포넌트 마운트 시 또는 params.searchData 변경 시 데이터 파싱
   useEffect(() => {
-    // 검색 결과가 있는 경우에만 처리
     if (params.searchData) {
       try {
-        const searchResponse: SearchResponse = JSON.parse(params.searchData as string);
-        const reportData = convertSearchResponseToReportData(searchResponse);
-        setReports([reportData]); // 검색 결과만 설정
+        const parsedData: SearchResponse = JSON.parse(params.searchData as string);
+        setReportData(parsedData);
+        // 디버깅을 위한 콘솔 로그 (데이터가 제대로 파싱되었는지 확인)
+        console.log("ReportScreen: 제목:", parsedData.제목);
+        console.log("ReportScreen: 태그:", parsedData.태그);
+        console.log("ReportScreen: 정리된 내용:", parsedData.보고서['정리된 내용'] ? "존재함" : "없음");
+        console.log("ReportScreen: AI가 제공하는 리포트:", parsedData.보고서['AI가 제공하는 리포트'] ? "존재함" : "없음");
+        console.log("ReportScreen: 출처 링크:", parsedData.보고서['출처 링크'] ? "존재함" : "없음");
+
       } catch (error) {
-        console.error('검색 데이터 파싱 오류:', error);
+        console.error('ReportScreen: 데이터 파싱 오류:', error);
         Alert.alert('오류', '검색 결과를 불러오는 중 오류가 발생했습니다.');
-        setReports([]); // 오류 시 빈 배열로 설정
+        setReportData(null);
       }
     } else {
-      // 검색 결과가 없는 경우 빈 배열로 설정
-      setReports([]);
+      Alert.alert('알림', '검색 결과 데이터가 없습니다.');
+      setReportData(null);
     }
-  }, [params.searchData]);
+  }, [params.searchData]); // params.searchData가 변경될 때마다 실행
 
-  // 추가 검색 기능 - 현재는 비활성화 (필요시 활성화)
-  const loadMoreReports = async () => {
-    // 실제 구현에서는 더 많은 검색 결과나 다른 주제의 보고서를 불러옴
-    // 현재는 검색 결과만 표시하므로 이 기능은 사용하지 않음
-    return;
-  };  
-
-  const renderFooter = () => {
-    if (isLoading) {
-      return (
-        <View style={styles.footerLoader}>
-          <Text>더 많은 보고서를 불러오는 중...</Text>
-        </View>
-      );
+  // 출처 링크를 외부 브라우저로 열기 위한 함수
+  const openLink = async (url: string) => {
+    try {
+      const supported = await Linking.canOpenURL(url); // 해당 URL을 열 수 있는지 확인
+      if (supported) {
+        await Linking.openURL(url); // URL 열기
+      } else {
+        Alert.alert('오류', `이 링크를 열 수 없습니다: ${url}`); // 열 수 없는 경우 알림
+      }
+    } catch (error) {
+      console.error('링크 열기 오류:', error);
+      Alert.alert('오류', '링크를 여는 중 오류가 발생했습니다.');
     }
-    return null;
   };
-
-  const renderEmptyComponent = () => (
-    <View style={styles.emptyContainer}>
-      <Text style={styles.emptyTitle}>🔍 검색 결과가 없습니다</Text>
-      <Text style={styles.emptyText}>
-        홈 화면에서 원하는 주제를 검색해보세요.{'\n'}
-        AI가 최신 이슈를 분석하여 보고서를 생성합니다.
-      </Text>
-    </View>
-  );
 
   return (
     <View style={styles.container}>
+      {/* Expo Router 스택 스크린 헤더 설정 */}
       <Stack.Screen
         options={{
-          headerShown: true,
-          headerTitle: '',
-          headerLeft: () => <HeaderLeftGoBack />,
-          headerBackground: () => <View style={{ flex: 1, backgroundColor: '#f8f9fa' }} />,
-          headerShadowVisible: false,
+          headerShown: true, // 헤더 표시 여부
+          // 헤더 타이틀을 동적으로 보고서 제목으로 설정
+          headerTitle: reportData ? reportData.제목 : '보고서', 
+          headerTitleStyle: styles.headerTitle, // 헤더 타이틀 스타일 적용
+          // 사용자 정의 뒤로가기 버튼 컴포넌트
+          headerLeft: () => <HeaderLeftGoBack title="이전" />, 
+          headerBackground: () => <View style={{ flex: 1, backgroundColor: '#f8f9fa' }} />, // 헤더 배경색
+          headerShadowVisible: false, // 헤더 그림자 비활성화
         }}
       />
       
-      <FlatList
-        data={reports}
-        renderItem={({ item, index }) => (
-          <Link 
-            href={{
-              pathname: `/report/[id]` as any,
-              params: { 
-                id: item.id,
-                title: item.title,
-                tags: JSON.stringify(item.tags),
-                content: item.content || '',
-                aiReport: item.aiReport || '',
-                sources: JSON.stringify(item.sources || [])
-              }
-            }} 
-            asChild
-          >
-            <ReportItem
-              id={item.id}
-              title={item.title}
-              tags={item.tags}
-            />
-          </Link>
+      {/* 보고서 내용을 스크롤 가능하게 하는 ScrollView */}
+      <ScrollView style={styles.scrollView} contentContainerStyle={styles.scrollContent}>
+        {reportData ? ( // reportData가 존재할 때만 내용 렌더링
+          <>
+            {/* 태그 섹션 */}
+            <View style={styles.tagsContainer}>
+              {reportData.태그.map((tag, index) => (
+                <View key={index} style={styles.tag}>
+                  <Text style={styles.tagText}>{tag}</Text>
+                </View>
+              ))}
+            </View>
+
+            {/* 정리된 내용 섹션 */}
+            {/* 데이터가 있을 경우에만 섹션 표시 */}
+            {reportData.보고서['정리된 내용'] && ( 
+              <>
+                <Text style={styles.sectionTitle}>정리된 내용</Text>
+                <Text style={styles.content}>{reportData.보고서['정리된 내용']}</Text>
+              </>
+            )}
+
+            {/* AI가 제공하는 리포트 섹션 */}
+            {/* 데이터가 있을 경우에만 섹션 표시 */}
+            {reportData.보고서['AI가 제공하는 리포트'] && (
+              <>
+                <Text style={styles.sectionTitle}>AI가 제공하는 리포트</Text>
+                <Text style={styles.content}>{reportData.보고서['AI가 제공하는 리포트']}</Text>
+              </>
+            )}
+
+            {/* 출처 버튼 - 클릭 시 출처 목록 토글 */}
+            <Pressable 
+              style={styles.sourceButton} 
+              onPress={() => setShowSources(!showSources)}
+            >
+              <Text style={styles.sourceButtonText}>
+                {showSources ? '출처 닫기' : '출처 보기'}
+              </Text>
+            </Pressable>
+
+            {/* 출처 목록 - showSources가 true이고 출처 링크가 있을 경우에만 표시 */}
+            {showSources && reportData.보고서['출처 링크'] && reportData.보고서['출처 링크'].length > 0 && (
+              <View style={styles.sourcesList}>
+                {reportData.보고서['출처 링크'].map((link, index) => (
+                  <Pressable key={index} onPress={() => openLink(link)}>
+                    <Text style={styles.sourceLink}>{link}</Text>
+                  </Pressable>
+                ))}
+              </View>
+            )}
+            {/* 출처는 보고 싶은데 출처 링크가 없는 경우 메시지 표시 */}
+            {showSources && (!reportData.보고서['출처 링크'] || reportData.보고서['출처 링크'].length === 0) && (
+                <Text style={styles.noSourceText}>제공된 출처 링크가 없습니다.</Text>
+            )}
+          </>
+        ) : (
+          // reportData가 아직 없거나 로딩 중일 때 표시할 메시지
+          <Text style={styles.loadingText}>보고서 데이터를 불러오는 중...</Text>
         )}
-        keyExtractor={(item, index) => `${item.id}-${index}`}
-        contentContainerStyle={styles.listContainer}
-        showsVerticalScrollIndicator={false}
-        ListFooterComponent={renderFooter}
-        ListEmptyComponent={renderEmptyComponent}
-        // onEndReached와 onEndReachedThreshold는 현재 사용하지 않음
-        // onEndReached={loadMoreReports}
-        // onEndReachedThreshold={0.1}
-      />
+      </ScrollView>
     </View>
   );
 }
 
+// 컴포넌트 스타일 정의
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#f8f9fa',
-  },
-  listContainer: {
-    paddingBottom: 16,
-  },
-  headerContainer: {
-    paddingHorizontal: 20,
-    paddingVertical: 20,
     backgroundColor: '#fff',
-    marginBottom: 10,
-    borderBottomWidth: 1,
-    borderBottomColor: '#e9ecef',
+  },
+  scrollView: {
+    flex: 1,
+    padding: 15, // ScrollView 내부 전체 패딩
+  },
+  scrollContent: {
+    paddingBottom: 20, // ScrollView 하단 여백
   },
   headerTitle: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    color: '#333',
-    marginBottom: 5,
-  },
-  headerSubtitle: {
-    fontSize: 16,
-    color: '#666',
-  },
-  footerLoader: {
-    padding: 20,
-    alignItems: 'center',
-  },
-  emptyContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    paddingVertical: 50,
-  },
-  emptyTitle: {
     fontSize: 18,
     fontWeight: 'bold',
     color: '#333',
+    flexShrink: 1, // 텍스트가 길어질 경우 줄어들도록
+  },
+  tagsContainer: {
+    flexDirection: 'row', // 태그를 가로로 나열
+    flexWrap: 'wrap', // 공간 부족 시 다음 줄로 넘김
+    marginBottom: 15,
+  },
+  tag: {
+    backgroundColor: '#e0e0e0', // 태그 배경색
+    borderRadius: 5, // 둥근 사각형 모양
+    paddingVertical: 5,
+    paddingHorizontal: 10,
+    marginRight: 8, // 태그 간 간격
+    marginBottom: 8, // 태그 줄 간 간격
+  },
+  tagText: {
+    fontSize: 12,
+    color: '#555',
+    fontWeight: 'bold',
+  },
+  sectionTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    marginTop: 20,
+    marginBottom: 10,
+    color: '#333',
+  },
+  content: {
+    fontSize: 15,
+    lineHeight: 22,
+    color: '#444',
+    marginBottom: 15,
+  },
+  sourceButton: {
+    backgroundColor: '#FBCEB1', // 버튼 색상
+    paddingVertical: 10,
+    paddingHorizontal: 15,
+    borderRadius: 8,
+    alignSelf: 'flex-start', // 내용에 맞춰 버튼 너비 조절
+    marginTop: 20,
     marginBottom: 10,
   },
-  emptyText: {
+  sourceButtonText: {
+    color: '#000',
+    fontSize: 15,
+    fontWeight: 'bold',
+  },
+  sourcesList: {
+    marginTop: 10,
+    padding: 10,
+    backgroundColor: '#f9f9f9',
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#eee',
+  },
+  sourceLink: {
     fontSize: 14,
-    color: '#666',
+    color: '#007AFF', // 링크 색상
+    textDecorationLine: 'underline', // 밑줄
+    marginBottom: 5,
+  },
+  noSourceText: {
+    fontSize: 14,
+    color: '#888',
+    fontStyle: 'italic',
+    marginTop: 10,
+  },
+  loadingText: {
     textAlign: 'center',
+    marginTop: 50,
+    fontSize: 16,
+    color: '#666',
   },
 });

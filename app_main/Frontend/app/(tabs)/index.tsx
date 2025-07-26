@@ -1,3 +1,4 @@
+// app/(tabs)/index.tsx
 import React, { useState } from 'react';
 import { View, Text, TextInput, StyleSheet, Alert, ActivityIndicator, Pressable } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
@@ -7,9 +8,11 @@ interface SearchResponse {
   제목: string;
   태그: string[];
   보고서: {
-    정리된내용: string;
-    AI가제공하는리포트: string;
-    출처링크: string[];
+    // ⭐ 수정: 띄어쓰기 포함된 '정리된 내용'으로
+    '정리된 내용': string; 
+    'AI가 제공하는 리포트': string; 
+    // ⭐ 수정: 띄어쓰기 포함된 '출처 링크'로
+    '출처 링크': string[]; 
   };
 }
 
@@ -18,7 +21,6 @@ export default function HomeScreen() {
   const [isLoading, setIsLoading] = useState(false);
   const router = useRouter();
 
-  // 검색 함수
   const handleSearch = async () => {
     if (!search.trim()) {
       Alert.alert('검색어 입력', '검색어를 입력해주세요.');
@@ -28,7 +30,6 @@ export default function HomeScreen() {
     setIsLoading(true);
     
     try {
-      // 백엔드 API 호출 (안드로이드 에뮬레이터용)
       const response = await fetch('http://10.0.2.2:8000/api/search', {
         method: 'POST',
         headers: {
@@ -42,24 +43,25 @@ export default function HomeScreen() {
       });
 
       if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
+        const errorData = await response.json().catch(() => ({ message: '응답 본문 없음' }));
+        console.error('API 응답 오류:', response.status, response.statusText, errorData);
+        throw new Error(`HTTP error! status: ${response.status}, details: ${JSON.stringify(errorData)}`);
       }
 
       const data: SearchResponse = await response.json();
       
-      // 검색 결과를 report 페이지로 전달
-      // 데이터를 query parameter로 전달하는 대신 전역 상태나 AsyncStorage 사용 권장
-      // 여기서는 간단한 예시를 위해 navigation state로 전달
+      console.log('HomeScreen: 백엔드에서 받은 원본 JSON 데이터:', data);
+
       router.push({
-        pathname: '/report',
+        pathname: '/report', 
         params: { searchData: JSON.stringify(data) }
       });
 
-    } catch (error) {
-      console.error('검색 오류:', error);
+    } catch (error: any) {
+      console.error('HomeScreen: 검색 처리 중 오류 발생:', error);
       Alert.alert(
         '검색 실패', 
-        '검색 중 오류가 발생했습니다. 네트워크 연결을 확인해주세요.'
+        `검색 중 오류가 발생했습니다. ${error.message || '네트워크 연결을 확인해주세요.'}`
       );
     } finally {
       setIsLoading(false);
@@ -75,12 +77,10 @@ export default function HomeScreen() {
           style={styles.input}
           value={search}
           onChangeText={setSearch}
-          onSubmitEditing={handleSearch} // 엔터키로도 검색 가능
+          onSubmitEditing={handleSearch}
           returnKeyType="search"
           editable={!isLoading}
         />
-        
-        {/* 검색 버튼 */}
         <Pressable 
           style={[styles.searchButton, isLoading && styles.searchButtonDisabled]}
           onPress={handleSearch}
@@ -93,22 +93,19 @@ export default function HomeScreen() {
           )}
         </Pressable>
       </View>
-
-      {/* 로딩 상태 표시 */}
       {isLoading && (
         <View style={styles.loadingContainer}>
           <ActivityIndicator size="large" color="#007AFF" />
           <Text style={styles.loadingText}>검색 중...</Text>
         </View>
       )}
-
     </View>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
-    flex: 1,      
+    flex: 1,       
     paddingTop: 300,
     alignItems: 'center',
     backgroundColor: '#fff',

@@ -1,15 +1,16 @@
 import { useRouter } from 'expo-router';
-import { Pressable, StyleSheet, Text } from 'react-native';
+import { Pressable, StyleSheet, Text, View } from 'react-native'; // View 추가
 import AntDesign from '@expo/vector-icons/AntDesign';
+import React from 'react'; // React import 추가
 
 /**
  * 헤더 좌측에 위치하여 뒤로가기 기능을 수행하는 버튼 컴포넌트입니다.
  * Expo Router의 useRouter 훅을 사용하여 이전 페이지로 이동합니다.
  */
-export default function HeaderLeftGoBack() {
+// title prop을 받도록 수정
+export default function HeaderLeftGoBack({ title }: { title?: string }) {
   const router = useRouter();
 
-  // 버튼을 누르면 router.back() 함수를 호출하여 이전 스크린으로 돌아갑니다.
   const handlePress = () => {
     if (router.canGoBack()) {
       router.back();
@@ -22,13 +23,21 @@ export default function HeaderLeftGoBack() {
     <Pressable onPress={handlePress} style={styles.button}>
       <AntDesign name="left" size={24} color="#000" />
       <Text style={styles.text}>홈</Text>
+      {/* title prop이 있다면 띄웁니다. */}
+      {title && (
+        <>
+          <Text style={styles.separatorText}>|</Text>
+          <Text numberOfLines={1} style={styles.titleText}>
+            {title}
+          </Text>
+        </>
+      )}
     </Pressable>
   );
 }
 
 const styles = StyleSheet.create({
   button: {
-    // iOS에서는 기본적으로 왼쪽에 여백이 있으나, 일관성을 위해 추가합니다.
     flexDirection: 'row',
     paddingHorizontal: 16,
     justifyContent: 'center',
@@ -39,6 +48,18 @@ const styles = StyleSheet.create({
     fontSize: 20,
     fontWeight: 'bold',
     marginLeft: 5,
+    marginBottom: 3,
+  },
+  separatorText: {
+    fontSize: 20,
+    color: '#ccc',
+    marginHorizontal: 8,
+    marginBottom: 3,
+  },
+  titleText: {
+    fontSize: 16, // "홈" 텍스트보다 약간 작게 설정하여 구별
+    color: '#555',
+    flexShrink: 1, // 텍스트가 길어질 때 줄어들도록 함
     marginBottom: 3,
   },
 });
