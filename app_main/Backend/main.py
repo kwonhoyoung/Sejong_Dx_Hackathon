@@ -482,15 +482,22 @@ class ClaudeClient:
         if not self.client:
             return "Claude API 키가 없어 요약할 수 없습니다."
 
-        if len(content.strip()) < get_settings().min_content_length:
-            return "콘텐츠가 충분하지 않아 요약할 수 없습니다."
-
-        # 콘텐츠 전처리 (HTML 태그, 스크립트 제거)
+        # 콘텐츠 유효성 검사 강화
         clean_content = re.sub(r'<[^>]+>', '', content)
         clean_content = re.sub(r'\s+', ' ', clean_content).strip()
 
         if len(clean_content) < get_settings().min_content_length:
-            return "유효한 콘텐츠가 부족합니다."
+            return "콘텐츠가 충분하지 않아 요약할 수 없습니다."
+
+        # 추출 실패 메시지 패턴 확인
+        error_patterns = [
+            "웹페이지 접근 오류", "액세스할 수 없습니다", "내용을 찾을 수 없습니다",
+            "페이지를 로드할 수 없습니다", "추출할 수 없습니다", "본문을 찾을 수 없습니다"
+        ]
+        if any(pattern in clean_content for pattern in error_patterns):
+            logger.warning(f"콘텐츠 추출 실패로 추정되어 요약 건너뜀: {clean_content[:100]}...")
+            return "제공된 텍스트에 요약할 내용이 없습니다."
+
 
         prompt = f"""주제: "{topic}"
 
@@ -501,7 +508,7 @@ class ClaudeClient:
 2. 3-5개 문단으로 구성
 3. 각 문단은 완전한 문장으로 끝나야 함
 4. 추측이나 해석 없이 기사 내용만 요약
-5. "죄송합니다", "제공된 본문" 등의 메타 설명 금지
+5. "죄송합니다", "제공된 본문", "요약할 수 없습니다" 등의 메타 설명 금지
 
 --- 기사 본문 ---
 {clean_content[:6000]}"""  # 토큰 제한
@@ -599,6 +606,10 @@ class ClaudeClient:
     def _parse_analysis_response(self, response: str, analyzed_count: int) -> AnalysisResult:
         """분석 응답 파싱"""
         try:
+            # JSON 마크다운 블록 정리
+            if response.strip().startswith("```json"):
+                response = response.strip()[7:-3].strip()
+
             data = json.loads(response)
             return AnalysisResult(
                 summary=data.get('trend_summary', '분석 결과 없음'),
@@ -606,14 +617,16 @@ class ClaudeClient:
                 future_outlook=data.get('future_outlook'),
                 analyzed_count=analyzed_count
             )
-        except json.JSONDecodeError:
+        except (json.JSONDecodeError, IndexError):
             # JSON 파싱 실패 시 텍스트 분석
+            logger.warning(f"JSON 파싱 실패, 텍스트로 대체: {response[:100]}...")
             lines = [line.strip() for line in response.split('\n') if line.strip()]
             return AnalysisResult(
                 summary=lines[0] if lines else "분석 결과 없음",
                 insights=lines[1:4] if len(lines) > 1 else [],
                 analyzed_count=analyzed_count
             )
+
 
 # ============= 이슈 검색 서비스 =============
 class IssueSearchService:
