@@ -2,37 +2,33 @@
 import React, { useState, useEffect } from 'react';
 import { View, Text, StyleSheet, ScrollView, Alert, Pressable, Linking } from 'react-native';
 import { Stack, useLocalSearchParams } from 'expo-router';
-// HeaderLeftGoBack 컴포넌트 경로 확인. 이 경로는 'app/(tabs)/report.tsx' 기준입니다.
 import HeaderLeftGoBack from '../../components/HeaderLeftGoBack'; 
 
-// SearchResponse 인터페이스: HomeScreen과 동일하게 구조 정의 (키 이름 띄어쓰기 포함)
+// SearchResponse 인터페이스: 백엔드에서 받는 JSON 데이터의 구조 정의
 interface SearchResponse {
   제목: string;
   태그: string[];
   보고서: {
-    '정리된 내용': string; 
-    'AI가 제공하는 리포트': string; 
-    '출처 링크': string[]; 
+    '정리된 내용': string; // 띄어쓰기 포함된 키
+    'AI가 제공하는 리포트': string; // 띄어쓰기 포함된 키
+    '출처 링크': string[]; // 띄어쓰기 포함된 키
   };
 }
 
 export default function ReportScreen() {
-  const params = useLocalSearchParams(); // URL 파라미터 가져오기
-  const [reportData, setReportData] = useState<SearchResponse | null>(null); // 보고서 데이터 상태
-  const [showSources, setShowSources] = useState(false); // 출처 표시 여부 상태 (토글용)
+  const params = useLocalSearchParams();
+  const [reportData, setReportData] = useState<SearchResponse | null>(null);
+  const [showSources, setShowSources] = useState(false);
 
-  // 컴포넌트 마운트 시 또는 params.searchData 변경 시 데이터 파싱
   useEffect(() => {
     if (params.searchData) {
       try {
         const parsedData: SearchResponse = JSON.parse(params.searchData as string);
         setReportData(parsedData);
-        // 디버깅을 위한 콘솔 로그 (데이터가 제대로 파싱되었는지 확인)
-        console.log("ReportScreen: 제목:", parsedData.제목);
-        console.log("ReportScreen: 태그:", parsedData.태그);
-        console.log("ReportScreen: 정리된 내용:", parsedData.보고서['정리된 내용'] ? "존재함" : "없음");
-        console.log("ReportScreen: AI가 제공하는 리포트:", parsedData.보고서['AI가 제공하는 리포트'] ? "존재함" : "없음");
-        console.log("ReportScreen: 출처 링크:", parsedData.보고서['출처 링크'] ? "존재함" : "없음");
+        
+        console.log("ReportScreen: 제목 (원본):", parsedData.제목);
+        console.log("ReportScreen: AI가 제공하는 리포트 (원본):", parsedData.보고서['AI가 제공하는 리포트']);
+        console.log("ReportScreen: 출처 링크 (원본):", parsedData.보고서['출처 링크']);
 
       } catch (error) {
         console.error('ReportScreen: 데이터 파싱 오류:', error);
@@ -43,16 +39,51 @@ export default function ReportScreen() {
       Alert.alert('알림', '검색 결과 데이터가 없습니다.');
       setReportData(null);
     }
-  }, [params.searchData]); // params.searchData가 변경될 때마다 실행
+  }, [params.searchData]);
 
-  // 출처 링크를 외부 브라우저로 열기 위한 함수
+  // ⭐ 강화된 cleanMarkdownString 헬퍼 함수
+  const cleanMarkdownString = (text: string | undefined): string => {
+    if (!text) return '';
+    let cleaned = text.trim();
+
+    // 1. 선행하는 ```json 제거 (제목과 리포트 모두 해당)
+    cleaned = cleaned.replace(/^```json\s*/, '');
+    // 2. 후행하는 ``` 제거
+    cleaned = cleaned.replace(/\s*```$/, '');
+
+    // 3. AI가 제공하는 리포트 내용에 특화된 추가 정리
+    // - "주요 인사이트:\n1. {" 또는 "주요 인사이트:\n1. {" 같은 패턴 제거
+    cleaned = cleaned.replace(/주요 인사이트:\s*\d+\.\s*\{/, '주요 인사이트:\n');
+    // - "trend_summary": "..." 패턴에서 키와 따옴표 제거
+    cleaned = cleaned.replace(/"trend_summary":\s*"/g, '');
+    // - ", "insights": [" 패턴에서 키와 따옴표, 괄호 제거
+    cleaned = cleaned.replace(/",\s*"insights":\s*\[/g, '\n\n인사이트:\n');
+    // - "future_outlook": "..." 패턴에서 키와 따옴표 제거
+    cleaned = cleaned.replace(/"future_outlook":\s*"/g, '\n\n향후 전망: ');
+    // - 남은 모든 큰따옴표 제거
+    cleaned = cleaned.replace(/"/g, ''); 
+    // - 마지막에 남은 불완전한 JSON 괄호/대괄호/쉼표 제거
+    cleaned = cleaned.replace(/\[\s*$/, ''); 
+    cleaned = cleaned.replace(/\]\s*$/, ''); 
+    cleaned = cleaned.replace(/,\s*$/, ''); 
+    cleaned = cleaned.replace(/\{\s*$/, ''); 
+    cleaned = cleaned.replace(/\}\s*$/, ''); 
+    // - 줄 시작의 숫자. 공백 (예: "1. ", "2. ") 제거 (multiline 모드)
+    cleaned = cleaned.replace(/^\d+\.\s*/gm, ''); 
+    
+    // 최종적으로 앞뒤 공백 제거 및 여러 줄 공백을 한 줄로 줄이기
+    cleaned = cleaned.trim().replace(/\n\s*\n/g, '\n\n'); 
+
+    return cleaned;
+  };
+
   const openLink = async (url: string) => {
     try {
-      const supported = await Linking.canOpenURL(url); // 해당 URL을 열 수 있는지 확인
+      const supported = await Linking.canOpenURL(url);
       if (supported) {
-        await Linking.openURL(url); // URL 열기
+        await Linking.openURL(url);
       } else {
-        Alert.alert('오류', `이 링크를 열 수 없습니다: ${url}`); // 열 수 없는 경우 알림
+        Alert.alert('오류', `이 링크를 열 수 없습니다: ${url}`);
       }
     } catch (error) {
       console.error('링크 열기 오류:', error);
@@ -62,25 +93,45 @@ export default function ReportScreen() {
 
   return (
     <View style={styles.container}>
-      {/* Expo Router 스택 스크린 헤더 설정 */}
       <Stack.Screen
         options={{
-          headerShown: true, // 헤더 표시 여부
-          // 헤더 타이틀을 동적으로 보고서 제목으로 설정
-          headerTitle: reportData ? reportData.제목 : '보고서', 
-          headerTitleStyle: styles.headerTitle, // 헤더 타이틀 스타일 적용
-          // 사용자 정의 뒤로가기 버튼 컴포넌트
-          headerLeft: () => <HeaderLeftGoBack title="이전" />, 
-          headerBackground: () => <View style={{ flex: 1, backgroundColor: '#f8f9fa' }} />, // 헤더 배경색
-          headerShadowVisible: false, // 헤더 그림자 비활성화
+          headerShown: true,
+          // ⭐ 상단 중앙에 제목 표시 (cleanMarkdownString 적용)
+          headerTitle: reportData ? cleanMarkdownString(reportData.제목) : '', 
+          headerTitleStyle: styles.headerTitle,
+          // ⭐ HeaderLeftGoBack에 "홈 | [제목]" 표시 (cleanMarkdownString 적용)
+          headerLeft: () => (
+            <HeaderLeftGoBack 
+              title={reportData ? cleanMarkdownString(reportData.제목) : '이전'} 
+            />
+          ), 
+          headerBackground: () => <View style={{ flex: 1, backgroundColor: '#f8f9fa' }} />,
+          headerShadowVisible: false,
         }}
       />
       
-      {/* 보고서 내용을 스크롤 가능하게 하는 ScrollView */}
       <ScrollView style={styles.scrollView} contentContainerStyle={styles.scrollContent}>
-        {reportData ? ( // reportData가 존재할 때만 내용 렌더링
+        {reportData ? (
           <>
-            {/* 태그 섹션 */}
+
+            {/* `정리된 내용` 필드에 띄어쓰기가 있으므로 대괄호 표기법 사용 */}
+            {reportData.보고서['정리된 내용'] && ( 
+              <>
+                <Text style={styles.sectionTitle}>정리된 내용</Text>
+                <Text style={styles.content}>{reportData.보고서['정리된 내용']}</Text>
+              </>
+            )}
+
+            {/* `AI가 제공하는 리포트` 필드에 띄어쓰기가 있으므로 대괄호 표기법 사용 */}
+            {reportData.보고서['AI가 제공하는 리포트'] && (
+              <>
+                <Text style={styles.sectionTitle}>AI가 제공하는 리포트</Text>
+                {/* AI가 제공하는 리포트 내용에 cleanMarkdownString 적용 */}
+                <Text style={styles.content}>{cleanMarkdownString(reportData.보고서['AI가 제공하는 리포트'])}</Text>
+              </>
+            )}
+
+
             <View style={styles.tagsContainer}>
               {reportData.태그.map((tag, index) => (
                 <View key={index} style={styles.tag}>
@@ -89,25 +140,6 @@ export default function ReportScreen() {
               ))}
             </View>
 
-            {/* 정리된 내용 섹션 */}
-            {/* 데이터가 있을 경우에만 섹션 표시 */}
-            {reportData.보고서['정리된 내용'] && ( 
-              <>
-                <Text style={styles.sectionTitle}>정리된 내용</Text>
-                <Text style={styles.content}>{reportData.보고서['정리된 내용']}</Text>
-              </>
-            )}
-
-            {/* AI가 제공하는 리포트 섹션 */}
-            {/* 데이터가 있을 경우에만 섹션 표시 */}
-            {reportData.보고서['AI가 제공하는 리포트'] && (
-              <>
-                <Text style={styles.sectionTitle}>AI가 제공하는 리포트</Text>
-                <Text style={styles.content}>{reportData.보고서['AI가 제공하는 리포트']}</Text>
-              </>
-            )}
-
-            {/* 출처 버튼 - 클릭 시 출처 목록 토글 */}
             <Pressable 
               style={styles.sourceButton} 
               onPress={() => setShowSources(!showSources)}
@@ -116,9 +148,9 @@ export default function ReportScreen() {
                 {showSources ? '출처 닫기' : '출처 보기'}
               </Text>
             </Pressable>
-
-            {/* 출처 목록 - showSources가 true이고 출처 링크가 있을 경우에만 표시 */}
-            {showSources && reportData.보고서['출처 링크'] && reportData.보고서['출처 링크'].length > 0 && (
+            
+            {/* `출처 링크` 필드에 띄어쓰기가 있으므로 대괄호 표기법 사용 */}
+            {showSources && reportData.보고서['출처 링크'] && reportData.보고서['출처 링크'].length > 0 && ( 
               <View style={styles.sourcesList}>
                 {reportData.보고서['출처 링크'].map((link, index) => (
                   <Pressable key={index} onPress={() => openLink(link)}>
@@ -127,13 +159,11 @@ export default function ReportScreen() {
                 ))}
               </View>
             )}
-            {/* 출처는 보고 싶은데 출처 링크가 없는 경우 메시지 표시 */}
             {showSources && (!reportData.보고서['출처 링크'] || reportData.보고서['출처 링크'].length === 0) && (
                 <Text style={styles.noSourceText}>제공된 출처 링크가 없습니다.</Text>
             )}
           </>
         ) : (
-          // reportData가 아직 없거나 로딩 중일 때 표시할 메시지
           <Text style={styles.loadingText}>보고서 데이터를 불러오는 중...</Text>
         )}
       </ScrollView>
@@ -141,7 +171,6 @@ export default function ReportScreen() {
   );
 }
 
-// 컴포넌트 스타일 정의
 const styles = StyleSheet.create({
   container: {
     flex: 1,
@@ -149,29 +178,29 @@ const styles = StyleSheet.create({
   },
   scrollView: {
     flex: 1,
-    padding: 15, // ScrollView 내부 전체 패딩
+    padding: 15,
   },
   scrollContent: {
-    paddingBottom: 20, // ScrollView 하단 여백
+    paddingBottom: 20,
   },
   headerTitle: {
     fontSize: 18,
     fontWeight: 'bold',
     color: '#333',
-    flexShrink: 1, // 텍스트가 길어질 경우 줄어들도록
+    flexShrink: 1,
   },
   tagsContainer: {
-    flexDirection: 'row', // 태그를 가로로 나열
-    flexWrap: 'wrap', // 공간 부족 시 다음 줄로 넘김
+    flexDirection: 'row',
+    flexWrap: 'wrap',
     marginBottom: 15,
   },
   tag: {
-    backgroundColor: '#e0e0e0', // 태그 배경색
-    borderRadius: 5, // 둥근 사각형 모양
+    backgroundColor: '#e0e0e0',
+    borderRadius: 5,
     paddingVertical: 5,
     paddingHorizontal: 10,
-    marginRight: 8, // 태그 간 간격
-    marginBottom: 8, // 태그 줄 간 간격
+    marginRight: 8,
+    marginBottom: 8,
   },
   tagText: {
     fontSize: 12,
@@ -192,11 +221,11 @@ const styles = StyleSheet.create({
     marginBottom: 15,
   },
   sourceButton: {
-    backgroundColor: '#FBCEB1', // 버튼 색상
+    backgroundColor: '#FBCEB1',
     paddingVertical: 10,
     paddingHorizontal: 15,
     borderRadius: 8,
-    alignSelf: 'flex-start', // 내용에 맞춰 버튼 너비 조절
+    alignSelf: 'flex-start',
     marginTop: 20,
     marginBottom: 10,
   },
@@ -215,9 +244,9 @@ const styles = StyleSheet.create({
   },
   sourceLink: {
     fontSize: 14,
-    color: '#007AFF', // 링크 색상
-    textDecorationLine: 'underline', // 밑줄
-    marginBottom: 5,
+    color: '#007AFF',
+    textDecorationLine: 'underline',
+    marginBottom: 10, 
   },
   noSourceText: {
     fontSize: 14,
