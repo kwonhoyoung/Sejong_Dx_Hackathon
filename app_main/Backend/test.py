@@ -106,9 +106,9 @@ def test_search_api_improved(topic, timeout=120):
                     print(f"내용: {content_preview}..." if len(content_preview) > 200 else f"내용: {content_preview}")
 
             # 전체 응답 구조 확인 (디버깅용)
-            if os.getenv('FULL_DEBUG', '').lower() == 'true':
-                print("\n[전체 응답 구조]")
-                print(json.dumps(result, indent=2, ensure_ascii=False) + "...")
+
+            print("\n[전체 응답 구조]")
+            print(json.dumps(result, indent=2, ensure_ascii=False) + "...")
 
         else:
             print(f"\n오류 응답:")
@@ -177,7 +177,7 @@ if __name__ == "__main__":
     check_server_health()
 
     # 단일 테스트
-    test_search_api_improved("인공지능")
+    test_search_api_improved("iOS")
 
     # 연속 테스트 (주석 해제하여 사용)
-    run_multiple_tests()
+    # run_multiple_tests()
