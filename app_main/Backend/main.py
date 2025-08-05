@@ -1,6 +1,5 @@
 """
 Perplexity API만을 사용한 이슈 검색 시스템
-구조화된 응답(response_format)을 활용한 통합 처리
 """
 
 import asyncio
