@@ -1,32 +1,36 @@
 """
 Perplexity API만을 사용한 이슈 검색 시스템
+구조화된 응답(response_format)을 활용한 통합 처리
 """
 
 import asyncio
-import time
 import json
-from typing import List, Dict, Optional, Any
+import os
+import time
+from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
 from datetime import datetime
-from contextlib import asynccontextmanager
-from functools import lru_cache
 from enum import Enum
+from functools import lru_cache
+from typing import Any, Dict, List, Optional
+
 import httpx
-from loguru import logger
-import os
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException, Request
-from pydantic import BaseModel, Field
-from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
+from loguru import logger
+from pydantic import BaseModel, Field
 
 # 환경 변수 로드
 load_dotenv()
 
+
 # ============= 설정 관리 =============
 @dataclass
 class Settings:
-    """중앙 집중식 설정 관리"""
+    """중앙 집중식 설정 관리 클래스."""
+
     # API Keys
     perplexity_api_key: Optional[str] = None
 
@@ -54,46 +58,79 @@ class Settings:
 
     @classmethod
     def from_env(cls) -> 'Settings':
-        """환경 변수에서 설정 로드"""
+        """환경 변수에서 설정을 로드합니다."""
         return cls(
             perplexity_api_key=os.getenv('PERPLEXITY_API_KEY'),
             perplexity_model=os.getenv('PERPLEXITY_MODEL', 'sonar'),
         )
 
+
 @lru_cache()
 def get_settings() -> Settings:
-    """설정 싱글톤"""
+    """설정 싱글톤을 반환합니다."""
     return Settings.from_env()
 
+
 # ============= 로깅 설정 =============
-def setup_logging():
-    """로깅 설정 초기화"""
+def setup_logging() -> None:
+    """로깅 설정을 초기화합니다."""
     logger.remove()
     logger.add(
         sink=lambda msg: print(msg, end=''),
-        format="<green>{time:YYYY-MM-DD HH:mm:ss}</green> | <level>{level: <8}</level> | <cyan>{name}</cyan>:<cyan>{function}</cyan> - <level>{message}</level>",
+        format=(
+            "<green>{time:YYYY-MM-DD HH:mm:ss}</green> | "
+            "<level>{level: <8}</level> | "
+            "<cyan>{name}</cyan>:<cyan>{function}</cyan> - "
+            "<level>{message}</level>"
+        ),
         level="INFO",
         colorize=True
     )
+
 
 setup_logging()
 
 # 환경 변수 로드 확인
 if os.getenv('DEBUG_MODE', '').lower() == 'true':
     settings = get_settings()
-    logger.info(f"Perplexity API Key 설정: {'Yes' if settings.perplexity_api_key else 'No'}")
+    logger.info(
+        f"Perplexity API Key 설정: "
+        f"{'Yes' if settings.perplexity_api_key else 'No'}"
+    )
     if settings.perplexity_api_key:
-        key_preview = settings.perplexity_api_key[:10] + "..." if len(settings.perplexity_api_key) > 10 else "Too short"
+        key_preview = (
+            settings.perplexity_api_key[:10] + "..."
+            if len(settings.perplexity_api_key) > 10
+            else "Too short"
+        )
         logger.info(f"Perplexity API Key Preview: {key_preview}")
 
+
 # ============= 커스텀 예외 =============
-class IssueSearchError(Exception): pass
-class APIError(IssueSearchError): pass
-class ParsingError(IssueSearchError): pass
-class ValidationError(IssueSearchError): pass
+class IssueSearchError(Exception):
+    """이슈 검색 관련 기본 예외 클래스."""
+    pass
+
+
+class APIError(IssueSearchError):
+    """API 호출 관련 예외 클래스."""
+    pass
+
+
+class ParsingError(IssueSearchError):
+    """데이터 파싱 관련 예외 클래스."""
+    pass
+
+
+class ValidationError(IssueSearchError):
+    """데이터 검증 관련 예외 클래스."""
+    pass
+
 
 # ============= 데이터 모델 =============
 class IssueCategory(str, Enum):
+    """이슈 카테고리 열거형."""
+
     NEWS = "뉴스"
     TECH = "기술"
     BUSINESS = "비즈니스"
@@ -101,8 +138,11 @@ class IssueCategory(str, Enum):
     POLICY = "정책"
     GENERAL = "일반"
 
+
 @dataclass
 class Issue:
+    """이슈 정보를 담는 데이터 클래스."""
+
     title: str
     url: str
     source: str = "Unknown"
@@ -112,10 +152,14 @@ class Issue:
     summary: Optional[str] = None
 
     def is_valid_summary(self) -> bool:
+        """유효한 요약인지 확인합니다."""
         return bool(self.summary and len(self.summary) >= 50)
+
 
 @dataclass
 class SearchResult:
+    """검색 결과를 담는 데이터 클래스."""
+
     topic: str
     keywords: List[str]
     issues: List[Issue]
@@ -123,28 +167,37 @@ class SearchResult:
     total_found: int = field(init=False)
 
     def __post_init__(self):
+        """초기화 후 처리를 수행합니다."""
         self.total_found = len(self.issues)
+
 
 @dataclass
 class AnalysisResult:
+    """분석 결과를 담는 데이터 클래스."""
+
     summary: str
     insights: List[str] = field(default_factory=list)
     future_outlook: Optional[str] = None
     analyzed_count: int = 0
 
     def to_full_text(self) -> str:
+        """전체 분석 내용을 텍스트로 변환합니다."""
         parts = [self.summary, "\n주요 인사이트:"]
         parts.extend(f"- {insight}" for insight in self.insights)
         if self.future_outlook:
             parts.append(f"\n향후 전망: {self.future_outlook}")
         return "\n".join(parts)
 
+
 # ============= HTTP 클라이언트 관리 =============
 class HTTPClientManager:
+    """HTTP 클라이언트를 관리하는 싱글톤 클래스."""
+
     _client: Optional[httpx.AsyncClient] = None
 
     @classmethod
     async def get_client(cls) -> httpx.AsyncClient:
+        """HTTP 클라이언트 인스턴스를 반환합니다."""
         if cls._client is None:
             timeout_config = httpx.Timeout(
                 get_settings().timeout,
@@ -153,19 +206,27 @@ class HTTPClientManager:
             )
             cls._client = httpx.AsyncClient(
                 timeout=timeout_config,
-                limits=httpx.Limits(max_connections=20, max_keepalive_connections=10)
+                limits=httpx.Limits(
+                    max_connections=20,
+                    max_keepalive_connections=10
+                )
             )
         return cls._client
 
     @classmethod
-    async def close(cls):
+    async def close(cls) -> None:
+        """HTTP 클라이언트를 닫습니다."""
         if cls._client:
             await cls._client.aclose()
             cls._client = None
 
-# ============= Perplexity 클라이언트 (모든 기능 통합) =============
+
+# ============= Perplexity 클라이언트 =============
 class PerplexityClient:
+    """Perplexity API와 통신하는 클라이언트 클래스."""
+
     def __init__(self, api_key: Optional[str] = None):
+        """Perplexity 클라이언트를 초기화합니다."""
         settings = get_settings()
         self.api_key = api_key or settings.perplexity_api_key
         self.base_url = settings.perplexity_base_url
@@ -178,7 +239,7 @@ class PerplexityClient:
         temperature: float = 0.3,
         response_format: Optional[Dict[str, Any]] = None
     ) -> Dict[str, Any]:
-        """Perplexity API 요청을 수행하는 기본 메서드"""
+        """Perplexity API에 요청을 보냅니다."""
         if not self.api_key:
             raise APIError("Perplexity API 키가 설정되지 않았습니다.")
 
@@ -194,7 +255,6 @@ class PerplexityClient:
             "temperature": temperature
         }
 
-        # response_format이 제공되면 추가
         if response_format:
             payload["response_format"] = response_format
 
@@ -208,17 +268,27 @@ class PerplexityClient:
                     await asyncio.sleep(delay)
 
                 client = await HTTPClientManager.get_client()
-                response = await client.post(self.base_url, json=payload, headers=headers)
+                response = await client.post(
+                    self.base_url,
+                    json=payload,
+                    headers=headers
+                )
                 response.raise_for_status()
                 return response.json()
 
             except httpx.HTTPStatusError as e:
                 if e.response.status_code == 401:
-                    logger.error("Perplexity API 인증 실패. API 키를 확인해주세요.")
+                    logger.error(
+                        "Perplexity API 인증 실패. API 키를 확인해주세요."
+                    )
                 elif e.response.status_code == 429:
-                    logger.warning("API 속도 제한에 도달했습니다. 잠시 후 재시도합니다.")
+                    logger.warning(
+                        "API 속도 제한에 도달했습니다. 잠시 후 재시도합니다."
+                    )
                 else:
-                    logger.error(f"Perplexity API HTTP 에러: {e.response.status_code}")
+                    logger.error(
+                        f"Perplexity API HTTP 에러: {e.response.status_code}"
+                    )
 
                 if attempt < settings.max_retries - 1:
                     continue
@@ -232,10 +302,12 @@ class PerplexityClient:
                 else:
                     raise APIError(f"API 요청 중 오류 발생: {e}")
 
-    async def search_issues_with_summaries(self, topic: str, time_period: str) -> List[Issue]:
-        """이슈를 검색하고 각 이슈의 요약까지 포함하여 반환"""
-
-        # JSON 스키마 정의
+    async def search_issues_with_summaries(
+        self,
+        topic: str,
+        time_period: str
+    ) -> List[Issue]:
+        """이슈를 검색하고 각 이슈의 요약을 포함하여 반환합니다."""
         response_format = {
             "type": "json_schema",
             "json_schema": {
@@ -255,7 +327,11 @@ class PerplexityClient:
                                     "description": {"type": "string"},
                                     "summary": {"type": "string"}
                                 },
-                                "required": ["title", "url", "source", "published_date", "category", "description", "summary"]
+                                "required": [
+                                    "title", "url", "source",
+                                    "published_date", "category",
+                                    "description", "summary"
+                                ]
                             }
                         }
                     },
@@ -267,7 +343,10 @@ class PerplexityClient:
         messages = [
             {
                 "role": "system",
-                "content": "You are an expert news researcher who searches for articles and provides comprehensive summaries in Korean."
+                "content": (
+                    "You are an expert news researcher who searches for "
+                    "articles and provides comprehensive summaries in Korean."
+                )
             },
             {
                 "role": "user",
@@ -312,9 +391,12 @@ class PerplexityClient:
             logger.error(f"이슈 검색 및 요약 실패: {e}")
             return []
 
-    async def generate_keywords(self, topic: str, max_keywords: int) -> List[str]:
-        """주제에 대한 키워드 생성"""
-
+    async def generate_keywords(
+        self,
+        topic: str,
+        max_keywords: int
+    ) -> List[str]:
+        """주제에 대한 키워드를 생성합니다."""
         response_format = {
             "type": "json_schema",
             "json_schema": {
@@ -338,7 +420,11 @@ class PerplexityClient:
             },
             {
                 "role": "user",
-                "content": f'주제 "{topic}"에 대한 핵심 검색 키워드를 {max_keywords}개 생성해주세요. 다양하고 관련성 높은 키워드를 선택하세요.'
+                "content": (
+                    f'주제 "{topic}"에 대한 핵심 검색 키워드를 '
+                    f'{max_keywords}개 생성해주세요. '
+                    f'다양하고 관련성 높은 키워드를 선택하세요.'
+                )
             }
         ]
 
@@ -362,9 +448,12 @@ class PerplexityClient:
             logger.error(f"키워드 생성 실패: {e}")
             return [topic]
 
-    async def analyze_issues(self, issues: List[Issue], topic: str) -> Optional[AnalysisResult]:
-        """여러 이슈를 종합적으로 분석"""
-
+    async def analyze_issues(
+        self,
+        issues: List[Issue],
+        topic: str
+    ) -> Optional[AnalysisResult]:
+        """여러 이슈를 종합적으로 분석합니다."""
         if not issues:
             return None
 
@@ -388,14 +477,19 @@ class PerplexityClient:
 
         # 이슈 정보 준비
         issues_text = "\n\n".join(
-            f"[{i+1}] {issue.title}\n출처: {issue.source}\n요약: {issue.summary[:200]}..."
+            f"[{i+1}] {issue.title}\n"
+            f"출처: {issue.source}\n"
+            f"요약: {issue.summary[:200]}..."
             for i, issue in enumerate(issues[:10])
         )
 
         messages = [
             {
                 "role": "system",
-                "content": "You are a technology trend analyst who provides comprehensive insights in Korean."
+                "content": (
+                    "You are a technology trend analyst who provides "
+                    "comprehensive insights in Korean."
+                )
             },
             {
                 "role": "user",
@@ -437,31 +531,48 @@ class PerplexityClient:
             logger.error(f"이슈 분석 실패: {e}")
             return None
 
+
 # ============= 이슈 검색 서비스 =============
 class IssueSearchService:
+    """이슈 검색 및 분석을 수행하는 서비스 클래스."""
+
     def __init__(self):
+        """검색 서비스를 초기화합니다."""
         self.perplexity = PerplexityClient()
         self.settings = get_settings()
-        self.semaphore = asyncio.Semaphore(self.settings.max_concurrent_requests)
+        self.semaphore = asyncio.Semaphore(
+            self.settings.max_concurrent_requests
+        )
 
-    async def search(self, topic: str, time_period: Optional[str] = None, analyze: bool = True) -> Dict[str, Any]:
-        """통합 검색 및 분석 수행"""
+    async def search(
+        self,
+        topic: str,
+        time_period: Optional[str] = None,
+        analyze: bool = True
+    ) -> Dict[str, Any]:
+        """통합 검색 및 분석을 수행합니다."""
         start_time = time.time()
         time_period = time_period or self.settings.default_time_period
 
         try:
-            # 1. 이슈 검색 및 요약 (한 번의 API 호출로 처리)
+            # 1. 이슈 검색 및 요약
             logger.info(f"'{topic}' 주제로 이슈 검색 및 요약 시작")
-            issues = await self.perplexity.search_issues_with_summaries(topic, time_period)
+            issues = await self.perplexity.search_issues_with_summaries(
+                topic, time_period
+            )
 
             if not issues:
                 logger.warning("이슈를 찾지 못했습니다")
-                return self._create_empty_result(topic, time.time() - start_time)
+                return self._create_empty_result(
+                    topic, time.time() - start_time
+                )
 
             logger.info(f"{len(issues)}개 이슈 검색 완료")
 
             # 2. 키워드 생성
-            keywords = await self.perplexity.generate_keywords(topic, self.settings.keywords_for_tags)
+            keywords = await self.perplexity.generate_keywords(
+                topic, self.settings.keywords_for_tags
+            )
 
             # 3. 종합 분석 (선택적)
             analysis = None
@@ -470,7 +581,10 @@ class IssueSearchService:
                 analysis = await self.perplexity.analyze_issues(issues, topic)
 
             search_time = time.time() - start_time
-            logger.info(f"전체 프로세스 완료: {len(issues)}개 이슈, {search_time:.2f}초 소요")
+            logger.info(
+                f"전체 프로세스 완료: {len(issues)}개 이슈, "
+                f"{search_time:.2f}초 소요"
+            )
 
             return {
                 "search_result": SearchResult(
@@ -484,9 +598,16 @@ class IssueSearchService:
 
         except Exception as e:
             logger.exception(f"검색 프로세스 중 오류 발생: {e}")
-            return self._create_error_result(topic, time.time() - start_time, str(e))
+            return self._create_error_result(
+                topic, time.time() - start_time, str(e)
+            )
 
-    def _create_empty_result(self, topic: str, search_time: float) -> Dict[str, Any]:
+    def _create_empty_result(
+        self,
+        topic: str,
+        search_time: float
+    ) -> Dict[str, Any]:
+        """빈 결과를 생성합니다."""
         return {
             "search_result": SearchResult(
                 topic=topic,
@@ -497,34 +618,63 @@ class IssueSearchService:
             "analysis": None
         }
 
-    def _create_error_result(self, topic: str, search_time: float, error: str) -> Dict[str, Any]:
+    def _create_error_result(
+        self,
+        topic: str,
+        search_time: float,
+        error: str
+    ) -> Dict[str, Any]:
+        """에러 결과를 생성합니다."""
         result = self._create_empty_result(topic, search_time)
         result["error"] = error
         return result
 
+
 # ============= API 스키마 및 FastAPI 앱 =============
 class SearchRequest(BaseModel):
-    topic: str = Field(..., min_length=1, max_length=100, description="검색할 주제")
-    time_period: str = Field(default="최근 1주일", description="검색 기간")
-    analyze: bool = Field(default=True, description="분석 수행 여부")
+    """검색 요청 스키마."""
+
+    topic: str = Field(
+        ...,
+        min_length=1,
+        max_length=100,
+        description="검색할 주제"
+    )
+    time_period: str = Field(
+        default="최근 1주일",
+        description="검색 기간"
+    )
+    analyze: bool = Field(
+        default=True,
+        description="분석 수행 여부"
+    )
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    """애플리케이션 생명주기를 관리합니다."""
     logger.info("애플리케이션 시작")
 
     # API 키 상태 확인
     settings = get_settings()
-    logger.info(f"Perplexity API Key: {'Configured' if settings.perplexity_api_key else 'Not configured'}")
+    logger.info(
+        f"Perplexity API Key: "
+        f"{'Configured' if settings.perplexity_api_key else 'Not configured'}"
+    )
 
     app.state.search_service = IssueSearchService()
     yield
     logger.info("애플리케이션 종료")
     await HTTPClientManager.close()
 
+
 app = FastAPI(
     title="Perplexity AI Issue Search API",
     version="1.0.0",
-    description="Perplexity API의 구조화된 응답을 활용한 통합 이슈 검색 및 분석 시스템",
+    description=(
+        "Perplexity API의 구조화된 응답을 활용한 "
+        "통합 이슈 검색 및 분석 시스템"
+    ),
     lifespan=lifespan
 )
 
@@ -536,12 +686,19 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+
 @app.get("/")
 async def root():
+    """루트 엔드포인트입니다."""
     return {"message": "Perplexity AI Issue Search API v1.0.0"}
 
+
 @app.post("/api/search")
-async def search_issues_endpoint(request: Request, search_request: SearchRequest):
+async def search_issues_endpoint(
+    request: Request,
+    search_request: SearchRequest
+):
+    """이슈 검색 엔드포인트입니다."""
     try:
         search_service: IssueSearchService = request.app.state.search_service
         result = await search_service.search(
@@ -553,10 +710,17 @@ async def search_issues_endpoint(request: Request, search_request: SearchRequest
         return JSONResponse(content=formatted_report)
     except Exception as e:
         logger.exception(f"API 엔드포인트에서 처리되지 않은 예외 발생: {e}")
-        raise HTTPException(status_code=500, detail="서버 내부 오류가 발생했습니다.")
+        raise HTTPException(
+            status_code=500,
+            detail="서버 내부 오류가 발생했습니다."
+        )
 
-def format_final_report(result: Dict[str, Any], topic: str) -> Dict[str, Any]:
-    """최종 보고서 포맷팅"""
+
+def format_final_report(
+    result: Dict[str, Any],
+    topic: str
+) -> Dict[str, Any]:
+    """최종 보고서를 포맷팅합니다."""
     search_result = result.get("search_result")
     analysis = result.get("analysis")
 
@@ -582,7 +746,9 @@ def format_final_report(result: Dict[str, Any], topic: str) -> Dict[str, Any]:
     for issue in issues:
         if issue.summary and issue.url not in seen_urls:
             summary_text = issue.summary.strip()
-            summarized_contents.append(f"### {issue.title}\n\n{summary_text}")
+            summarized_contents.append(
+                f"### {issue.title}\n\n{summary_text}"
+            )
 
         if issue.url and issue.url not in seen_urls:
             source_links.append({
@@ -606,8 +772,16 @@ def format_final_report(result: Dict[str, Any], topic: str) -> Dict[str, Any]:
 
     # 최종 보고서 구성
     report_content = {
-        "정리된 내용": "\n\n---\n\n".join(summarized_contents) if summarized_contents else "유효한 요약 내용이 없습니다.",
-        "AI가 제공하는 리포트": analysis.to_full_text() if analysis else "종합 분석을 생성하지 못했습니다.",
+        "정리된 내용": (
+            "\n\n---\n\n".join(summarized_contents)
+            if summarized_contents
+            else "유효한 요약 내용이 없습니다."
+        ),
+        "AI가 제공하는 리포트": (
+            analysis.to_full_text()
+            if analysis
+            else "종합 분석을 생성하지 못했습니다."
+        ),
         "출처 링크": source_links
     }
 
@@ -625,15 +799,17 @@ def format_final_report(result: Dict[str, Any], topic: str) -> Dict[str, Any]:
         "보고서": report_content
     }
 
+
 @app.get("/health")
 async def health_check():
-    """헬스 체크 엔드포인트"""
+    """헬스 체크 엔드포인트입니다."""
     settings = get_settings()
     return {
         "status": "healthy",
         "api_key_configured": bool(settings.perplexity_api_key),
         "model": settings.perplexity_model
     }
+
 
 if __name__ == "__main__":
     import uvicorn
